@@ -58,15 +58,18 @@ bool A6_state = HIGH; //Green
 CAN_message_t msg;
 
 // These constants are determined based on the reading of the potentiometer (pin A4)
-// when the rudder is at full stop
-const int full_port_sensor = 60;
-const int full_starboard_sensor = 600;
+// when the rudder is at full stop.
+// Determined by watching the serial monitor and manually turning the rudder.
+const int full_port_sensor = 552; 
+const int center_sensor = 331;
+const int full_starboard_sensor = 152; // or center
 
 // These are the angles (in 1/10000 radians) of the rudder at the full stops.
 // We assume zero is in the middle.
 //5200 times 1e-4 in radians = 0.52 rad. In degrees, this is 27.79 
 const int full_port_out = -5200; 
-const int full_starboard_out = 5200;
+const int full_starboard_out = 5200; //or center
+const int center_out = 0; //or center
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT); digitalWrite(LED_BUILTIN, HIGH); 
@@ -92,8 +95,15 @@ void canSniff(const CAN_message_t &msg) {
 void loop() {
   // read the analog in value:
   sensorValue = analogRead(analogInPin);
-  // map it to the range of a single byte:
-  rudder_angle_rad = map(sensorValue, full_port_sensor, full_starboard_sensor, full_port_out, full_starboard_out);
+  // map it to the range defined in NMEA 2000:
+  // Since the string is not perfectly flat, the different angles had geometric non-linearities
+  // Therefore, we'll correct these using a 2 segment line.
+  if (sensorValue < center_sensor){
+    rudder_angle_rad = map(sensorValue, center_sensor, full_starboard_sensor, center_out, full_starboard_out);  
+  }
+  else{
+    rudder_angle_rad = map(sensorValue, full_port_sensor, center_sensor, full_port_out, center_out);
+  }
   
   Can1.events();
 
