@@ -50,15 +50,23 @@ int16_t rudder_position = 0; //range +/1 Pi rad, resolution 1e-4 rad
 
 
 int sensorValue = 0;        // value read from the pot
-int output_value = 0;        // value output to the PWM (analog out)
+int rudder_angle_rad = 0;        // value output to the PWM (analog out)
 
 bool A7_state = HIGH; //RED
 bool A6_state = HIGH; //Green
 
 CAN_message_t msg;
 
-const int full_port = -5200; //5200 times 1e-4 in radians = 0.52 rad. In degrees, this is 27.79 
-const int full_starboard = 5200;
+// These constants are determined based on the reading of the potentiometer (pin A4)
+// when the rudder is at full stop
+const int full_port_sensor = 60;
+const int full_starboard_sensor = 600;
+
+// These are the angles (in 1/10000 radians) of the rudder at the full stops.
+// We assume zero is in the middle.
+//5200 times 1e-4 in radians = 0.52 rad. In degrees, this is 27.79 
+const int full_port_out = -5200; 
+const int full_starboard_out = 5200;
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT); digitalWrite(LED_BUILTIN, HIGH); 
@@ -85,7 +93,7 @@ void loop() {
   // read the analog in value:
   sensorValue = analogRead(analogInPin);
   // map it to the range of a single byte:
-  output_value = map(sensorValue, 60, 600, full_port, full_starboard);
+  rudder_angle_rad = map(sensorValue, full_port_sensor, full_starboard_sensor, full_port_out, full_starboard_out);
   
   Can1.events();
 
@@ -95,24 +103,20 @@ void loop() {
     msg.id = CAN_ID;
     msg.buf[0] = uint8_t(rudder_instance);
     msg.buf[1] = uint8_t(direction_order);
-    memcpy(&msg.buf[2],&angle_order,2);
-    memcpy(&msg.buf[4],&output_value,2);
+    memcpy(&msg.buf[2],&angle_order,2); // little endian, 2's Compliment
+    memcpy(&msg.buf[4],&rudder_angle_rad,2); // little endian, 2's Compliment
     memset(&msg.buf[6],0xFF,2);
     
     Can1.write(msg);
     A7_state = !A7_state;
-    analogWrite(A7, output_value);
+    digitalWrite(A7, A7_state);
     
     // print the results to the Serial Monitor:
-//    Serial.print("sensor = ");
-//    Serial.print(sensorValue);
-//    Serial.print("\t");
-    Serial.printf("Sensor = %4d -> %6d  %08X ", sensorValue, output_value, msg.id);
+    Serial.printf("Sensor = %4d -> %6d  %08X ", sensorValue, rudder_angle_rad, msg.id);
     for ( uint8_t i = 0; i < msg.len; i++ ) {
       Serial.printf("%02X ",msg.buf[i]);
     } 
     Serial.println();
-    //Serial.println(output_value);
     
   }
 }
