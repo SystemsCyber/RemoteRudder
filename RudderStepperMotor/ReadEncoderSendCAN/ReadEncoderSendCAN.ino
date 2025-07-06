@@ -20,9 +20,19 @@ static const uint32_t PGN         = 61469;  // PGN 61469 Steering Angle Sensor I
 static const uint8_t  SOURCE_ADDR = 33; // Body Controller 
 static uint32_t id;
 
-static const uint8_t SERVO_EN_PIN = 6;
-static const uint8_t SERVO_PUL_PIN = 3;
+static const uint8_t SERVO_EN_PIN = 7;
+static const uint8_t SERVO_PUL_PIN = 4;
 static const uint8_t SERVO_DIR_PIN = 5;
+
+static const uint8_t GREEN_PIN = 6;
+static const uint8_t RED_PIN = 3;
+
+static const uint8_t BLUE_5PIN = A2;
+static const uint8_t GRAY_5PIN = A1;
+static const uint8_t BROWN_5PIN = A1;
+static const uint8_t WHITE_5PIN = 2;
+static const uint8_t BLACK_5PIN = 8;
+
 
 static bool SERVO_EN_State = LOW;
 static bool SERVO_PUL_State = LOW;
@@ -66,10 +76,16 @@ float angleError = 0;
 static const float ANGLE_THRESHOLD = 0.7;
 static const float MAX_ANGLE_CHANGE = 3600.0;
 
+
+
 SPISettings amt22Settings(SPI_FREQ, MSBFIRST, SPI_MODE0);
 
 void setup() {
-  Serial.begin(115200);
+  //Serial.begin(115200);
+  pinMode(GREEN_PIN, OUTPUT);
+  pinMode(RED_PIN, OUTPUT);
+  digitalWrite(GREEN_PIN, LOW);
+  digitalWrite(RED_PIN, HIGH);
   pinMode(ENC_CS, OUTPUT);
   pinMode(SERVO_DIR_PIN, OUTPUT);
   pinMode(SERVO_EN_PIN, OUTPUT);
@@ -77,10 +93,9 @@ void setup() {
   digitalWrite(SERVO_EN_PIN, LOW); //Toggle this with an external Command
   digitalWrite(ENC_CS, HIGH);
   pinMode(CAN0_INT,INPUT);
-  SPI.begin();
   // init CAN
   if (CANBUS.begin(MCP_STDEXT, CAN_SPEED, CAN_OSC_MHZ) != CAN_OK) {
-    Serial.println("CAN init failed");
+    //Serial.println("CAN init failed");
     pinMode(LED_BUILTIN, OUTPUT);
     while (1){ // flash led
       digitalWrite(LED_BUILTIN, HIGH);
@@ -90,19 +105,27 @@ void setup() {
     };
   }
   CANBUS.setMode(MCP_NORMAL);
-  Serial.println(F("Read Encoder and Send on CAN setup complete"));
+  //Serial.println(F("Read Encoder and Send on CAN setup complete"));
 
   // compose J1939 ID: priority, PGN, dest, src
   id = (uint32_t(PRIORITY) << 26)
      | (uint32_t(PGN & 0x03FFFF) << 8)
      | SOURCE_ADDR;
 
+  for (uint8_t i=0;i<255;i++){
+    analogWrite(GREEN_PIN, i);
+    analogWrite(RED_PIN, 255-i);
+    delay(8);
+  }
+
   // prime lastRaw so we don't get a huge jump on first read
+  SPI.begin();
   lastRaw = readEncoder();
   totalCount = lastRaw;
   lastAngleDeg = lastRaw * (360.0 / COUNTS_PER_REV);
   totalAngle = lastAngleDeg;  
   angleGoal = totalAngle;
+
 }
 
 //62273	External Steering Request	XSR	External request to the steering controller
@@ -116,9 +139,9 @@ void readCAN(){
     // minus 1024.00 example: cansend can0 18F34100#0060F07F45
     if((rxId & 0x80000000) == 0x80000000 && len >= 5){     //make sure the message is at least length 5 with 29-bit id.
       if ( ((rxId & 0x3FFFF00) >> 8) == 62273 ){ //XSR = External Steering Request PGN = 0xF341
-        Serial.print(F("Found External Steering Request message on CAN. Enable: "));
+        //Serial.print(F("Found External Steering Request message on CAN. Enable: "));
         char enable = rxBuf[4];
-        Serial.println(enable);
+        //Serial.println(enable);
         if (enable == 'E') digitalWrite(SERVO_EN_PIN, LOW); // ascii text E for enable (0x45)
         else {
           digitalWrite(SERVO_EN_PIN, HIGH);
@@ -129,20 +152,23 @@ void readCAN(){
         data_in += uint32_t(rxBuf[1]) << 8;
         data_in += uint32_t(rxBuf[2]) << 16;
         data_in += uint32_t(rxBuf[3]) << 24;
-        Serial.print(data_in,HEX);
+        //Serial.print(data_in,HEX);
 
         angleGoal = float(data_in)/1000.0 - angleOffset/1000.0;
         
-        Serial.print(" totalAngle: ");
-        Serial.println(totalAngle);
-        Serial.print(" angleGoal: ");
-        Serial.println(angleGoal);
+        //Serial.print(" totalAngle: ");
+        //Serial.println(totalAngle);
+        //Serial.print(" angleGoal: ");
+        //Serial.println(angleGoal);
         if (abs(angleGoal-totalAngle) > MAX_ANGLE_CHANGE+1 ){ //Limit the total attempts in each direction
           if (angleGoal > totalAngle) angleGoal =  MAX_ANGLE_CHANGE;
           else if (angleGoal < totalAngle) angleGoal = - MAX_ANGLE_CHANGE;
-          Serial.print(" newAngleGoal: ");
-          Serial.println(angleGoal);
+          //Serial.print(" newAngleGoal: ");
+          //Serial.println(angleGoal);
         }
+      }
+      else if (rxId == 0){
+
       }
     }
   }
@@ -189,6 +215,10 @@ uint16_t readEncoder() { //AMT22
     if (RES_BITS == 12) position >>= 2;
   }
   delayMicroseconds(45);
+  uint8_t LED_position =  map(position,0,0xFFF,0,255);
+  analogWrite(GREEN_PIN, LED_position);
+  analogWrite(RED_PIN, 255-LED_position);
+  
   return position;
 }
 
@@ -270,7 +300,7 @@ void loop() {
       angleError = angleGoal - totalAngle;
     }
     else {
-      Serial.println(F("Raw returned 0xFFFF"));
+      //Serial.println(F("Raw returned 0xFFFF"));
       memset(data, 0xFF, 8);
     }
     lastEncoderMillis = now;
@@ -279,7 +309,7 @@ void loop() {
   if (now - lastCANMillis >= CAN_SEND_TIME) {
     // send as extended frame
     if (CANBUS.sendMsgBuf(id, 1, 8, data) != CAN_OK) {
-      Serial.println("CAN send error");
+      //Serial.println("CAN send error");
     }
     lastCANMillis = now;
   }
