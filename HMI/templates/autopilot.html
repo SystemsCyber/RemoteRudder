@@ -1,0 +1,132 @@
+<!-- templates/autopilot.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Heading & Rudder</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 60px;
+            color: white; /*Font Color*/
+            background-color: black;
+            height: 100vh; 
+            display: grid;
+            grid-template-columns: 1fr;
+            grid-template-rows: auto 1fr auto;   /* header | main | footer  */
+            grid-template-areas:
+                "hdr"
+                "main"
+                "ftr";
+            margin: 0;
+            padding: 0;
+        }
+
+        .main-grid {
+            grid-area: main;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 0;
+            height: 100%;
+            align-items: middle;
+        }
+
+        #btnPortGoal, #btnStarGoal, #btnPortRudder, #btnStarRudder {
+            background-color: transparent;
+            border: none;
+            cursor: pointer;
+        }
+
+        .side-col-left,
+        .side-col-right {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            place-items: center;
+            outline: 1px dotted yellow;
+        }
+
+        .side-col-left img,
+        .side-col-right img {
+            max-width: 37vmin;
+            width: 100%;
+            height: auto;
+            cursor: pointer;
+        }
+
+        .center-col {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            outline: 1px dotted yellow;
+        }
+
+        canvas#compass {
+            aspect-ratio: 1/1;
+            background: #fafafa;
+            height: 100%;
+            border-radius: 50%;
+            display: block;
+        }
+        #servoToggleBtn {
+            font-size: 60px;
+            padding: 0.5em 0.5em;
+            border: none;
+            border-radius: 0.5em;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #servoToggleBtn.disabled {
+            background-color: lightgreen;
+            color: black;
+        }
+
+        #servoToggleBtn.enabled {
+            background-color: lightcoral;
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-grid">
+        <div class="side-col-left" id="left">
+            <div class="port-side-row top">
+                <button id="btnPortGoal">
+                    <img src="/static/images/RedPortArrowLabeled.png" alt="Port Goal">
+                </button>
+            </div>
+            <div class="port-side-row middle" id="leftMiddle">Steering Goal:<br> <span style="font-family:monospace; font-size:120px" id="steeringGoal">-------</span><br>Steering Val:<br> <span style="font-family:monospace; font-size:120px"  id="steeringValue">----</span></div>
+            <div class="port-side-row bottom" id="leftBottom">
+                <button id="btnPortRudder">
+                    <img src="/static/images/RudderArrowLeft.png" alt="Port Rudder">
+                </button>
+            </div>
+        </div>
+
+        <div class="center-col" id="center">
+            <canvas id="compass"></canvas>
+        </div>
+
+        <div class="side-col-right" id="right">
+            <div class="star-side-row top">
+                <button id="btnStarGoal">
+                    <img src="/static/images/GreenStarboardArrowLabeled.png" alt="Starboard Goal">
+                </button>
+            </div>
+            <div class="star-side-row middle" id="rightMiddle"><button id="servoToggleBtn">Enable Servo</button></div>
+            <div class="star-side-row bottom" id="rightBottom">
+                <button id="btnStarRudder">
+                    <img src="/static/images/RudderArrowRight.png" alt="Starboard Rudder">
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/socket.io.min.js"></script>
+    <script src="/static/js/compass.js"></script>
+    <script>
+       
+    </script>
+</body>
+</html>

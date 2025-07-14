@@ -97,7 +97,7 @@ void setup() {
 void canSniff(const CAN_message_t &msg_rx) {
   LED_state = !LED_state;
   digitalWrite(LED_BUILTIN, LED_state);
-  Serial.printf("RX %08X\n", msg_rx.id);
+  //Serial.printf("RX %08X\n", msg_rx.id);
 }
 
 void loop() {
