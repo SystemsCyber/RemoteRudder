@@ -1,7 +1,14 @@
 /* compass.js – boat stays still, compass spins */
 (function () {
   // let heading = "S", rudder = 'r', goal = 'f', speed = null; // initial values
-  let heading = -3166, rudder = 22, goal = 270, speed = 5.3; // initial values
+  let heading = -3166, rudder = 22, goal = 250, speed = 5.3; // initial values
+  let rudder_string = '----'
+  let heading_string = '----';
+  let speed_string = '----';
+  let rpm_string = '----';
+  let heading_goal_string = '----';
+  let lat_string = '----';
+  let lon_string = '----';
   let desired_goal = goal; // for the draggable handle
   let steer = 0, steer_goal = 0; // initial values
   const canvas = document.getElementById('compass');
@@ -32,41 +39,91 @@
     
     socket.onmessage = function (event) {
       const data = JSON.parse(event.data);
-        if (data.timeout && data.source_id === 0x18F01D21) {
-        updateSteeringUI('----', '----');
+            // 0x18F01D21: {"name": "steering", "last_time": time.time()},
+            // 0x19F10D13: {"name": "rudder", "last_time": time.time()},
+            // 0x09F8021C: {"name": "gps_position", "last_time": time.time()},
+            // 0x18FEE81C: {"name": "vehicle_direction", "last_time": time.time()},
+            // 0x0CF00400: {"name": "engine_control", "last_time": time.time()},
+            // 0x09F8021C: {"name": "gps_speed", "last_time": time.time()},
+            // 0x09F8011C: {"name": "gps_position_rapid", "last_time": time.time()},
+      if (data.timeout){
+        if (data.source_id === 0x18F01D21) {//steering
+          updateSteeringUI('----', '----');
         }
-        if ('steering_angle' in data && 'steering_goal' in data) {
-            updateSteeringUI(data.steering_angle, data.steering_goal);
+        else if (data.source_id === 0x19F10D13) {//rudder
+          rudder = 0;
+          rudder_string = '----';
         }
-
-        if ('rudder_angle' in data) {
-            document.getElementById('rudderAngle').textContent = 
-                data.rudder_angle !== null ? data.rudder_angle.toFixed(1) + '°' : '--';
+        else if (data.source_id === 0x09F8011C) {
+          lat_string = '----';
+          lon_string = '----';
         }
-
-        if ('latitude' in data && 'longitude' in data) {
-            updateMap(data.latitude, data.longitude);  // or just display in UI
+        else if (data.source_id === 0x09F8021C) {
+          speed_string = '----';
+          heading_string = '----';
         }
-      };
+        else if (data.source_id === 0x0CF00400) {
+          rpm_string = '----';
+        }
+      } 
+      
+      if ('steering_angle' in data && 'steering_goal' in data) {
+        const angle_string =
+            typeof data.steering_angle === 'number' && !isNaN(data.steering_angle)
+                ? data.steering_angle.toFixed(0) + '°'
+                : 'ERROR';
+        const steering_goal_string =
+            typeof data.steering_goal === 'number' && !isNaN(data.steering_goal)
+                ? data.steering_goal.toFixed(0) + '°'
+                : 'ERROR';
+        updateSteeringUI(angle_string, steering_goal_string);
+      }
+      
+      if ('rudder_angle' in data) {
+        if (typeof data.rudder_angle === 'number' && !isNaN(data.rudder_angle)) {
+          rudder = data.rudder_angle;
+          rudder_string = data.rudder_angle.toFixed(0) + '°';
+        }
+        else {
+          rudder = 0;
+          rudder_string = 'ERROR';
+        }
+      }
 
+      if ('COG' in data && 'SOG' in data) {
+        if (typeof data.COG === 'number' && !isNaN(data.COG)) {
+          heading = data.COG;
+          heading_string = fmtDeg(heading, 0);
+        }
+        else {
+          heading_string = 'ERROR';
+        }
+        if (typeof data.SOG === 'number' && !isNaN(data.SOG)) {
+          speed = data.SOG;
+          speed_string = fmtSpd(speed, 1);
+        }
+        else {
+          speed_string = 'ERROR';
+        }
+      }
+       
+      if ('heading_goal' in data) {
+        if (typeof data.heading_goal === 'number' && !isNaN(data.heading_goal)) {
+          goal = data.heading_goal;
+          heading_goal_string = fmtDeg(goal, 0);
+        }
+        else {
+          goal = heading; // reset to current heading
+          heading_goal_string = 'ERROR';
+        }
+      }
+    }
 
-    function updateSteeringUI(angle, goal) {
+    function updateSteeringUI(angle_string, steering_goal_string) {
       const steeringValueEl = document.getElementById('steeringValue');
       const steeringGoalEl = document.getElementById('steeringGoal');
-
-      if (steeringValueEl) {
-          steeringValueEl.textContent =
-              typeof angle === 'number' && !isNaN(angle)
-                  ? angle.toFixed(0) + '°'
-                  : '----';
-      }
-
-      if (steeringGoalEl) {
-          steeringGoalEl.textContent =
-              typeof goal === 'number' && !isNaN(goal)
-                  ? goal.toFixed(0) + '°'
-                  : '----';
-      }
+      if (steeringValueEl) { steeringValueEl.textContent = angle_string;}
+      if (steeringGoalEl)  { steeringGoalEl.textContent  = steering_goal_string; }
     }
 
     document.getElementById('btnPortRudder').addEventListener('click', function () {
@@ -99,21 +156,65 @@
 
     if (btnPort) {
       btnPort.addEventListener('click', () => {
-        desired_goal = clamp360(goal - 1);             // adjust step as you like
-        
+        socket.send(JSON.stringify({ command: "goal_left" }));
       });
     }
 
     if (btnStar) {
       btnStar.addEventListener('click', () => {
-        desired_goal = clamp360(goal + 1);
-        
+        socket.send(JSON.stringify({ command: "goal_right" }));
       });
     }
 
-    
-    
-  });
+    function moveDrag(evt) {
+      if (!dial.dragging) return;
+      const { x, y } = pointerToCanvas(evt);
+
+      /* Screen angle (0° = up) */
+      const dx = x;
+      const dy = -y;
+      let ang  = Math.atan2(dx, dy) * 180 / Math.PI;    // −180…180
+      desired_goal = clamp360(ang+heading); // 0…360
+      socket.send(JSON.stringify({ heading_goal: desired_goal }));
+      
+    }
+
+    window.addEventListener('mousemove',  e => moveDrag(e));
+    window.addEventListener('touchmove',  e => moveDrag(e.touches[0]));
+    canvas.addEventListener('mousedown',  e => tryStartDrag(e));
+    canvas.addEventListener('touchstart', e => tryStartDrag(e.touches[0]));
+    window.addEventListener('mouseup',    () => dial.dragging = false);
+    window.addEventListener('touchend',   () => dial.dragging = false);
+    canvas.addEventListener('dblclick',  e => handleDblClick(e));       // mouse
+    canvas.addEventListener('touchend',  e => {
+      if (e.detail === 2) handleDblClick(e.changedTouches[0]);
+    }); // touch
+
+    function tryStartDrag(evt) {
+      const { x, y } = pointerToCanvas(evt);
+      const hit = hitHandle(x, y);
+      // console.log('[tryStartDrag]', { x, y, R, hit });
+      
+      if (hit) {
+        dial.dragging = true;
+        moveDrag(evt);
+      }
+    }
+
+    function handleDblClick(evt) {
+      const { x, y } = pointerToCanvas(evt);
+
+      /* Only react if the pointer is inside the handle */
+      if (!hitHandle(x, y)) {
+        desired_goal = heading;
+        socket.send(JSON.stringify({ heading_goal: desired_goal }));
+      }
+    }
+
+    socket.send(JSON.stringify({ heading_goal: desired_goal }));
+
+    console.log('compass.js: WebSocket and event listeners set up.');
+});
   
   const dpr = window.devicePixelRatio || 1;
 
@@ -182,6 +283,7 @@
     }
   }
 
+
   /* Pointer inside the circular handle? */
   function hitHandle(px, py) {
     const dx = px - 0;
@@ -204,50 +306,7 @@
   window.addEventListener('DOMContentLoaded', resizeCanvas);
   window.addEventListener('resize',           resizeCanvas);
   window.addEventListener('load',   resizeCanvas);
-  canvas.addEventListener('mousedown',  e => tryStartDrag(e));
-  canvas.addEventListener('touchstart', e => tryStartDrag(e.touches[0]));
-  window.addEventListener('mousemove',  e => moveDrag(e));
-  window.addEventListener('touchmove',  e => moveDrag(e.touches[0]));
-  window.addEventListener('mouseup',    () => dial.dragging = false);
-  window.addEventListener('touchend',   () => dial.dragging = false);
-  canvas.addEventListener('dblclick',  e => handleDblClick(e));       // mouse
-  canvas.addEventListener('touchend',  e => {
-    if (e.detail === 2) handleDblClick(e.changedTouches[0]);          // mobile dbl-tap
-  });
-
-  function tryStartDrag(evt) {
-    const { x, y } = pointerToCanvas(evt);
-    const hit = hitHandle(x, y);
-    // console.log('[tryStartDrag]', { x, y, R, hit });
-    
-    if (hit) {
-      dial.dragging = true;
-      moveDrag(evt);
-    }
-  }
-
-  function moveDrag(evt) {
-    if (!dial.dragging) return;
-    const { x, y } = pointerToCanvas(evt);
-
-    /* Screen angle (0° = up) */
-    const dx = x;
-    const dy = -y;
-    let ang  = Math.atan2(dx, dy) * 180 / Math.PI;    // −180…180
-    desired_goal = clamp360(ang+heading); // 0…360
-    
-    
-  }
-
-  function handleDblClick(evt) {
-    const { x, y } = pointerToCanvas(evt);
-
-    /* Only react if the pointer is inside the handle */
-    if (!hitHandle(x, y)) {
-      desired_goal = heading;
-     
-    }
-  }
+  
 
 
   function draw() {
@@ -310,7 +369,7 @@
     ctx.font        = '96px monospace'
     ctx.textAlign   = 'left';              // anchor on the right end
     ctx.textBaseline = 'top';               // anchor at the top edge
-    ctx.fillText(fmtDeg(heading),  // e.g. “347.6°”
+    ctx.fillText(heading_string,  // e.g. “347.6°”
                 bw / 4 ,               // 8 px left of the boat’s left edge
                 -bh / 4);                  // flush with the boat’s top
     
@@ -323,7 +382,7 @@
     ctx.font        = '96px monospace'
     ctx.textAlign   = 'left';              // anchor on the right end
     ctx.textBaseline = 'top';               // anchor at the top edge
-    ctx.fillText(fmtSpd(speed),  // e.g. “347.6°”
+    ctx.fillText(speed_string,  // e.g. “347.6°”
                 bw / 4 ,               // 8 px left of the boat’s left edge
                 bh / 4);                  // flush with the boat’s top
     
@@ -336,7 +395,7 @@
     ctx.font        = '96px monospace'
     ctx.textAlign   = 'right';              // anchor on the right end
     ctx.textBaseline = 'top';               // anchor at the top edge
-    ctx.fillText(fmtDeg(rudder,2),  // e.g. “347.6°”
+    ctx.fillText(rudder_string,  // e.g. “347.6°”
                 -bw / 4 ,               // 8 px left of the boat’s left edge
                 bh / 4);                  // flush with the boat’s top
 
@@ -349,7 +408,7 @@
     ctx.font        = '96px monospace'
     ctx.textAlign   = 'right';              // anchor on the right end
     ctx.textBaseline = 'top';               // anchor at the top edge
-    ctx.fillText(fmtDeg(goal),  // e.g. “347.6°”
+    ctx.fillText(heading_goal_string,  // e.g. “347.6°”
                 -bw / 4 ,               // 8 px left of the boat’s left edge
                 -bh / 4);                  // flush with the boat’s top
                 

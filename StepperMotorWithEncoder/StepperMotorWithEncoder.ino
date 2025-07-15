@@ -41,8 +41,8 @@ static uint32_t id;
 
 
 
-
-static bool SERVO_EN_State = LOW;
+ 
+static bool SERVO_EN_State = HIGH; //Disabled by default
 static bool SERVO_PUL_State = LOW;
 static bool SERVO_DIR_State = LOW;
 
@@ -99,7 +99,7 @@ void setup() {
   pinMode(SERVO_DIR_PIN, OUTPUT);
   pinMode(SERVO_EN_PIN, OUTPUT);
   pinMode(SERVO_PUL_PIN, OUTPUT);
-  digitalWrite(SERVO_EN_PIN, HIGH); //Toggle this with an external Command, Default is disable
+  digitalWrite(SERVO_EN_PIN, SERVO_EN_State); //Toggle this with an external Command, Default is disable
   digitalWrite(ENC_CS, HIGH);
   pinMode(CAN0_INT,INPUT);
   // init CAN
@@ -180,9 +180,13 @@ void readCAN(){
         //Serial.print(F("Found External Steering Request message on CAN. Enable: "));
         char enable = rxBuf[4];
         //Serial.println(enable);
-        if (enable == 'E') digitalWrite(SERVO_EN_PIN, LOW); // ascii text E for enable (0x45)
+        if (enable == 'E') {
+          SERVO_EN_State = LOW;
+          digitalWrite(SERVO_EN_PIN, SERVO_EN_State); // ascii text E for enable (0x45)
+        }
         else {
-          digitalWrite(SERVO_EN_PIN, HIGH);
+          SERVO_EN_State = HIGH;
+          digitalWrite(SERVO_EN_PIN, SERVO_EN_State);
           return;
         }
 
@@ -319,7 +323,9 @@ void loop() {
       
       //CAN Data
       uint32_t reportedAngle = uint32_t(1000.0 * totalAngle) + angleOffset;
-      uint32_t reportedGoal = uint32_t(1000.0 * angleGoal) + angleOffset;
+      uint32_t reportedGoal = 0xFFFFFFFF;
+      if (!SERVO_EN_State) reportedGoal = uint32_t(1000.0 * angleGoal) + angleOffset;
+      
       //uint16_t reportedSpeed = uint16_t(10.0 * speed) - speedOffset;
       data[0] = (reportedAngle >>  0) & 0xFF;
       data[1] = (reportedAngle >>  8) & 0xFF;
