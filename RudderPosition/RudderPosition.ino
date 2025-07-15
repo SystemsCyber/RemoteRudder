@@ -48,7 +48,7 @@ int16_t angle_order = 0xFFFF; //Not available as a command
 // Rudder angle where positive values are starboard and negative values are port.
 int16_t rudder_position = 0; //range +/1 Pi rad, resolution 1e-4 rad
 
-int sensorValue = 0;        // value read from the pot
+int sensorValue = 256;        // value read from the pot
 int rudder_angle_rad = 0;   // value output to the PWM (analog out)
 
 bool LED_state = HIGH;
@@ -58,9 +58,9 @@ CAN_message_t msg_rx;
 // These constants are determined based on the reading of the potentiometer (pin A4)
 // when the rudder is at full stop.
 // Determined by watching the serial monitor and manually turning the rudder.
-const int full_port_sensor = 552; 
+const int full_port_sensor = 549; 
 int center_sensor = 331;
-const int full_starboard_sensor = 152; 
+const int full_starboard_sensor = 143; 
 const int max_center_sensor = 400;
 const int min_center_sensor = 260;
 
@@ -79,8 +79,8 @@ const uint8_t full_starboard_out_deg = 128 + 120; //or center
 const uint8_t center_out_deg = 128; //or center
 
 
-static int maxSensorValue;
-static int minSensorValue;
+static int maxSensorValue = 256;
+static int minSensorValue = 256;
 static uint8_t rudderDegrees;
 static uint8_t counter = 0;
 
@@ -122,9 +122,10 @@ void canSniff(const CAN_message_t &msg_rx) {
 void loop() {
   // read the analog in value:
   sensorValue = analogRead(analogInPin);
-  if (sensorValue > maxSensorValue) maxSensorValue = sensorValue;
-  if (sensorValue < minSensorValue) minSensorValue = sensorValue;
-  
+  if (sensorValue > 0 ){
+    if (sensorValue > maxSensorValue) maxSensorValue = sensorValue;
+    if (sensorValue < minSensorValue) minSensorValue = sensorValue;
+  }
   // map it to the range defined in NMEA 2000:
   // Since the string is not perfectly flat, the different angles had geometric non-linearities
   // Therefore, we'll correct these using a 2 segment line.
