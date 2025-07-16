@@ -1,7 +1,7 @@
 /* compass.js – boat stays still, compass spins */
 (function () {
   // let heading = "S", rudder = 'r', goal = 'f', speed = null; // initial values
-  let heading = -3166, rudder = 22, goal = 250, speed = 5.3; // initial values
+  let heading = 0, rudder = 0, goal = 0, speed = 0; // initial values
   let rudder_string = '----'
   let heading_string = '----';
   let speed_string = '----';
@@ -67,16 +67,24 @@
         }
       } 
       
-      if ('steering_angle' in data && 'steering_goal' in data) {
+      if ('steering_angle' in data && 'steering_goal' in data && 'servo_enabled' in data) {
+        let steering_goal_string = '****'
         const angle_string =
             typeof data.steering_angle === 'number' && !isNaN(data.steering_angle)
                 ? data.steering_angle.toFixed(0) + '°'
                 : 'ERROR';
-        const steering_goal_string =
+        if (data.servo_enabled) {
+          steering_goal_string =
             typeof data.steering_goal === 'number' && !isNaN(data.steering_goal)
                 ? data.steering_goal.toFixed(0) + '°'
                 : 'ERROR';
+        }
+        else {
+            
+        }  
+        
         updateSteeringUI(angle_string, steering_goal_string);
+
       }
       
       if ('rudder_angle' in data) {
@@ -143,9 +151,9 @@
         socket.send(JSON.stringify({
             command: servoEnabled ? "servo_enable" : "servo_disable"
         }));
-        this.textContent = servoEnabled ? "Disable Servo" : "Enable Servo";
-        servoToggleBtn.classList.toggle("enabled", servoEnabled);
-        servoToggleBtn.classList.toggle("disabled", !servoEnabled);
+        // this.textContent = servoEnabled ? "Disable Servo" : "Enable Servo";
+        // servoToggleBtn.classList.toggle("enabled", servoEnabled);
+        // servoToggleBtn.classList.toggle("disabled", !servoEnabled);
     });
 
     servoToggleBtn.classList.add("disabled");
@@ -211,7 +219,16 @@
       }
     }
 
-    socket.send(JSON.stringify({ heading_goal: desired_goal }));
+    
+
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ heading_goal: desired_goal }));
+    } else {
+        socket.addEventListener('open', function () {
+            socket.send(JSON.stringify({ heading_goal: desired_goal }));
+        }, { once: true });
+    }
+
 
     console.log('compass.js: WebSocket and event listeners set up.');
 });

@@ -4,6 +4,8 @@
 <head>
     <title>Heading & Rudder</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -40,6 +42,7 @@
         .side-col-left,
         .side-col-right {
             display: grid;
+            
             grid-template-rows: auto 1fr auto;
             place-items: center;
             outline: 1px dotted yellow;
@@ -47,7 +50,7 @@
 
         .side-col-left img,
         .side-col-right img {
-            max-width: 37vmin;
+            max-width: 300px;
             width: 100%;
             height: auto;
             cursor: pointer;
@@ -83,7 +86,7 @@
         }
 
         #servoToggleBtn.enabled {
-            background-color: lightcoral;
+            background-color: rgb(255, 82, 82);
             color: black;
         }
     </style>
@@ -114,7 +117,13 @@
                     <img src="/static/images/GreenStarboardArrowLabeled.png" alt="Starboard Goal">
                 </button>
             </div>
-            <div class="star-side-row middle" id="rightMiddle"><button id="servoToggleBtn">Enable Servo</button></div>
+            <div class="star-side-row middle" id="rightMiddle">
+                <span style="font-size:48px" id="servoEnabled">Servo is Disabled</span>
+                <br>
+                <button id="servoToggleBtn">Enable Servo</button>
+                <p>Engine Speed:<br>
+                    <span style="font-family:monospace; font-size:120px" id="EngineSpeed">----</span></p>
+            </div>
             <div class="star-side-row bottom" id="rightBottom">
                 <button id="btnStarRudder">
                     <img src="/static/images/RudderArrowRight.png" alt="Starboard Rudder">
