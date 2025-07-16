@@ -85,6 +85,15 @@ double angleError = 0;
 static const double ANGLE_THRESHOLD = 0.7;
 static const double MAX_ANGLE_CHANGE = 3600.0;
 
+uint8_t rudder_count = 0;
+uint16_t rudder_value = 256;
+uint16_t rudder_min = 230;
+uint16_t rudder_max = 270;
+int rudder_deg = 0;
+
+bool OKtoMove = true;
+bool upperLimitReached = false;
+bool lowerLimitReached = false;
 
 
 SPISettings amt22Settings(SPI_FREQ, MSBFIRST, SPI_MODE0);
@@ -121,12 +130,12 @@ void setup() {
 
   CANBUS.init_Mask(0, true,  0x1FFFFFFF);  // mask on RX0
   CANBUS.init_Filt(0, true,  0x0CF34155);  // filter 0 → RX0
-  CANBUS.init_Filt(1, true,  0x0CF34155);  // filter 1 → RX0
+  CANBUS.init_Filt(1, true,  0x19F10D13);  // filter 1 → RX0
   CANBUS.init_Filt(2, true,  0x0CF34155);  // filter 2 → RX0
 
   CANBUS.init_Mask(1, true,  0x1FFFFFFF);  // mask on RX1
   CANBUS.init_Filt(3, true,  0x0CF34155);  // filter 3 → RX1
-  CANBUS.init_Filt(4, true,  0x0CF34155);  // filter 4 → RX1
+  CANBUS.init_Filt(4, true,  0x19F10D13);  // filter 4 → RX1
   CANBUS.init_Filt(5, true,  0x0CF34155);  // filter 5 → RX1
 
   
@@ -172,7 +181,7 @@ void readCAN(){
     // Zero example: cansend can0 0CF34155#0000008045
     // Plus 180.00 example: cansend can0 0CF34155#00C0028045
     // minus 1024.00 example: cansend can0 0CF34155#0060F07F45
-    if((rxId & 0x80000000) == 0x80000000 && len >= 5){     //make sure the message is at least length 5 with 29-bit id.
+    if( len >= 5){     //make sure the message is at least length 5 with 29-bit id.
       if ( ((rxId & 0x3FFFF00) >> 8) == 62273 ){ //XSR = External Steering Request PGN = 0xF341
         lastCANRXmillis = millis();
         green_state = !green_state;
@@ -208,6 +217,19 @@ void readCAN(){
           //Serial.print(" newAngleGoal: ");
           //Serial.println(angleGoal);
         }
+      }
+      else if ((rxId & 0x3FFFF00) == 0x01F10D00) {
+        rudder_count = rxBuf[0];
+        rudder_value = rxBuf[1] + rxBuf[2]*256;
+        rudder_max   = rxBuf[3] + rxBuf[4]*256;
+        rudder_min   = rxBuf[5] + rxBuf[6]*256;
+        rudder_deg   = (rxBuf[7] - 0x80) / 2;
+        if (rudder_value > (rudder_max - 10)) upperLimitReached = true;
+        else upperLimitReached = false;
+          
+        if (rudder_value < (rudder_min + 10)) lowerLimitReached = true;
+        else lowerLimitReached = false;
+          
       }
     }
   }
@@ -357,9 +379,26 @@ void loop() {
 
   //if ((now - lastCANRXmillis) < 5100 ){
     if (abs(angleError) > ANGLE_THRESHOLD){
-      if (angleError < ANGLE_THRESHOLD) digitalWrite(SERVO_DIR_PIN, LOW);
-      else digitalWrite(SERVO_DIR_PIN, HIGH);
-      step();
+      if (angleError < ANGLE_THRESHOLD) {
+        if (!upperLimitReached) {  //Check to be sure the rudder limit and the shaft angle match direction.
+          digitalWrite(SERVO_DIR_PIN, LOW);
+          step();
+          red_state=false;
+        }
+        else {
+          red_state = true;
+        }
+      }
+      else {
+        if(!lowerLimitReached) {
+          digitalWrite(SERVO_DIR_PIN, HIGH);
+          red_state = false;
+          step();
+        }
+        else {
+          red_state = true;
+        }
+      }
     }
   //else digitalWrite(SERVO_EN_PIN, HIGH);  // disable stepper
 
