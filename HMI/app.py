@@ -43,6 +43,9 @@ class WSHandler(tornado.websocket.WebSocketHandler):
             data = json.loads(message)
             if "command" in data:
                 handle_client_command(data["command"])
+            elif "heading_goal" in data:
+                can_reader.set_goal(data["heading_goal"])
+                broadcast_can_message(data={"heading_goal": data["heading_goal"]})
         except Exception as e:
             logger.exception("Failed to process WebSocket message")
 

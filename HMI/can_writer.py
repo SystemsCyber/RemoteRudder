@@ -21,6 +21,10 @@ class CANWriter:
         logger.info(f"Servo {'enabled' if enable else 'disabled'}")
         self.send_goal()  # re-send current goal with updated enable byte
 
+    def set_goal(self, goal):
+        self.current_goal = goal
+        logger.info(f"Setting steering goal to {goal} degrees")
+
     def send_goal(self):
         angle_raw = int((self.current_goal * 1000) + 0x80000000) & 0xFFFFFFFF
         angle_bytes = angle_raw.to_bytes(4, byteorder='little')
