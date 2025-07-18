@@ -24,8 +24,8 @@ class CANinterface:
             self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate)
             logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
         except:
-            logger.exception("CAN Interface Error: Please be sure hardware is plugged in.")
-            self.bus = None
+            logger.warning("CAN Interface Error: Please be sure hardware is plugged in.")
+            sys.exit()
 
         self.listeners = []
         self.current_goal = 0.0  # Start at 0 degrees
