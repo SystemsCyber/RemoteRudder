@@ -9,8 +9,11 @@
   let heading_goal_string = '----';
   let lat_string = '----';
   let lon_string = '----';
+  let rudder_max = 0
+  let rudder_min = 0
+  let rudder_max_string = '----';
+  let rudder_min_string = '----';
   let desired_goal = goal; // for the draggable handle
-  let steer = 0, steer_goal = 0; // initial values
   const canvas = document.getElementById('compass');
   const ctx    = canvas.getContext('2d');
   let R      = canvas.height / 2;          // radius
@@ -53,6 +56,8 @@
         else if (data.source_id === 0x19F10D13) {//rudder
           rudder = 0;
           rudder_string = '----';
+          rudder_min_string = '----';
+          rudder_max_string = '----';
         }
         else if (data.source_id === 0x09F8011C) {
           lat_string = '----';
@@ -64,23 +69,40 @@
         }
         else if (data.source_id === 0x0CF00400) {
           rpm_string = '----';
+          if (engineSpeed) { engineSpeed.textContent = rpm_string;}
         }
       } 
       
+      if ('rpm' in data) {
+        try {
+          rpm_string = data.rpm.toFixed(0).padStart(4, ' ');;
+        } catch (error) {
+          rpm_string = 'ERROR';
+        }
+        if (engineSpeed) { engineSpeed.textContent = rpm_string;}
+      }
+
       if ('steering_angle' in data && 'steering_goal' in data && 'servo_enabled' in data) {
-        let steering_goal_string = '****'
-        const angle_string =
-            typeof data.steering_angle === 'number' && !isNaN(data.steering_angle)
-                ? data.steering_angle.toFixed(0) + '°'
-                : 'ERROR';
+        try {
+          angle_string = data.steering_angle.toFixed(0) + '°';
+        } catch (error) {
+          angle_string = 'ERROR';
+        }
+        if (typeof data.servo_enabled !== "undefined") {
+            servoEnabled = data.servo_enabled;
+            setServoState(servoEnabled);
+        }
+        
+        let steering_goal_string = '****'; // default value
         if (data.servo_enabled) {
-          steering_goal_string =
-            typeof data.steering_goal === 'number' && !isNaN(data.steering_goal)
-                ? data.steering_goal.toFixed(0) + '°'
-                : 'ERROR';
+          try {
+            steering_goal_string = data.steering_goal.toFixed(0) + '°';
+          } catch (error) {
+            steering_goal_string = 'ERROR';
+          }
         }
         else {
-            
+          steering_goal_string = '****';  
         }  
         
         updateSteeringUI(angle_string, steering_goal_string);
@@ -88,43 +110,70 @@
       }
       
       if ('rudder_angle' in data) {
-        if (typeof data.rudder_angle === 'number' && !isNaN(data.rudder_angle)) {
+        try {
           rudder = data.rudder_angle;
           rudder_string = data.rudder_angle.toFixed(0) + '°';
-        }
-        else {
+        } catch (error) { 
           rudder = 0;
           rudder_string = 'ERROR';
         }
       }
-
+      
+      if ('rudder_value_min' in data && 'rudder_value_max' in data) {
+        try {
+          rudder_min_string = data.rudder_value_min;
+          rudder_max_string = data.rudder_value_max;
+        } catch (error) {
+          rudder_min_string = 'ERROR';
+          rudder_max_string = 'ERROR';
+        }
+        
+      }
+  
       if ('COG' in data && 'SOG' in data) {
-        if (typeof data.COG === 'number' && !isNaN(data.COG)) {
+        try {
           heading = data.COG;
           heading_string = fmtDeg(heading, 0);
-        }
-        else {
-          heading_string = 'ERROR';
-        }
-        if (typeof data.SOG === 'number' && !isNaN(data.SOG)) {
           speed = data.SOG;
           speed_string = fmtSpd(speed, 1);
-        }
-        else {
+        } catch (error) {
+          heading_string = 'ERROR';
           speed_string = 'ERROR';
         }
       }
-       
+
       if ('heading_goal' in data) {
-        if (typeof data.heading_goal === 'number' && !isNaN(data.heading_goal)) {
-          goal = data.heading_goal;
+        try {
+          goal = data.heading_goal; // goal is in degrees 
           heading_goal_string = fmtDeg(goal, 0);
-        }
-        else {
-          goal = heading; // reset to current heading
+        } catch (error) {
           heading_goal_string = 'ERROR';
         }
       }
+    
+    }
+    const engineSpeed = document.getElementById('EngineSpeed');
+    const servoBtn = document.getElementById("servoToggleBtn");
+    const servoStatus = document.getElementById("servoEnabled");
+    const rudderButtons = [
+        document.getElementById("btnPortRudder"),
+        document.getElementById("btnStarRudder")
+    ];
+
+    function setServoState(enabled) {
+        if (enabled) {
+            servoBtn.textContent = "Disable Servo";
+            servoBtn.classList.remove("disabled");
+            servoBtn.classList.add("enabled");
+            servoStatus.textContent = "Servo is Enabled";
+            rudderButtons.forEach(btn => btn.disabled = false);
+        } else {
+            servoBtn.textContent = "Enable Servo";
+            servoBtn.classList.remove("enabled");
+            servoBtn.classList.add("disabled");
+            servoStatus.textContent = "Servo is Disabled";
+            rudderButtons.forEach(btn => btn.disabled = true);
+        }
     }
 
     function updateSteeringUI(angle_string, steering_goal_string) {
@@ -146,14 +195,17 @@
 
     let servoEnabled = false;
 
-    document.getElementById("servoToggleBtn").addEventListener("click", function () {
+    servoBtn.addEventListener("click", () => {
         servoEnabled = !servoEnabled;
-        socket.send(JSON.stringify({
-            command: servoEnabled ? "servo_enable" : "servo_disable"
-        }));
-        // this.textContent = servoEnabled ? "Disable Servo" : "Enable Servo";
-        // servoToggleBtn.classList.toggle("enabled", servoEnabled);
-        // servoToggleBtn.classList.toggle("disabled", !servoEnabled);
+        setServoState(servoEnabled);
+        if (servoEnabled) {
+            // Send the new state to the server
+            socket.send(JSON.stringify({ command: "servo_enable"}));
+        }
+        else {
+            // Send the new state to the server
+            socket.send(JSON.stringify({ command: "servo_disable"}));
+        } 
     });
 
     servoToggleBtn.classList.add("disabled");
@@ -368,7 +420,7 @@
     const rudderLen  = bh * 0.30;            // tweak length (30 % of boat)
     const rudderBase = 24;                   // width at the hinge
 
-    ctx.fillStyle = 'rgba(230, 85, 85, 0.8)';  // 50 % alpha red
+    ctx.fillStyle = 'rgb(230, 85, 85)';  // 50 % alpha red
     ctx.beginPath();
     ctx.moveTo(-rudderBase / 2, 0);          // left hinge corner
     ctx.lineTo(rudderBase / 2, 0);           // right hinge corner
@@ -434,6 +486,17 @@
     ctx.fillText("Goal   ",  // e.g. “347.6°”
                 -bw / 4 ,               // 8 px left of the boat’s left edge
                 -bh / 4);                  // flush with the boat’s top
+
+    ctx.font        = '50px monospace'
+    ctx.textBaseline = 'bottom';               // anchor at the top edge
+    ctx.fillText(rudder_min_string,  // e.g. “347.6°”
+                -.4*bw,               // 8 px left of the boat’s left edge
+                0.5*bh);                  // flush with the boat’s top
+
+    ctx.textAlign   = 'left';
+    ctx.fillText(rudder_max_string,  // e.g. “347.6°”
+                .4*bw,               // 8 px left of the boat’s left edge
+                0.5*bh);                  // flush with the boat’s top
     /* ───────────────────────── */
 
     ctx.restore();

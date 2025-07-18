@@ -44,23 +44,11 @@ class WSHandler(tornado.websocket.WebSocketHandler):
             data = json.loads(message)
             if "command" in data:
                 handle_client_command(data["command"])
+            elif "heading_goal" in data:
+                can_writer.set_goal(data["heading_goal"])
+                broadcast_can_message(data={"heading_goal": data["heading_goal"]})
         except Exception as e:
             logger.exception("Failed to process WebSocket message")
-
-def make_app():
-    return tornado.web.Application([
-        (r"/", MainHandler),
-        (r"/ws", WSHandler),
-    ],
-    template_path="templates",
-    static_path="static",
-    debug=True)
-
-def broadcast_can_message(data):
-    if 'steering_goal' in data:
-        can_writer.current_goal= data['steering_goal']
-    for c in clients:
-        c.write_message(json.dumps(data))
 
 def handle_client_command(command):
     logger.info(f"Handling command: {command}")
@@ -72,6 +60,30 @@ def handle_client_command(command):
         can_writer.set_servo_enabled(True)
     elif command == "servo_disable":
         can_writer.set_servo_enabled(False)
+    elif command == "goal_set":
+        try:
+            goal = float(command.split(":")[1])
+            
+            logger.info(f"Set steering goal to {goal} degrees")
+        except ValueError:
+            logger.error("Invalid goal value received")
+            
+def make_app():
+    return tornado.web.Application([
+        (r"/", MainHandler),
+        (r"/ws", WSHandler),
+    ],
+    template_path="templates",
+    static_path="static",
+    debug=True)
+
+
+def broadcast_can_message(data):
+    if 'steering_goal' in data:
+        can_writer.current_goal= data['steering_goal']
+    for c in clients:
+        c.write_message(json.dumps(data))
+
 
 
 async def main():
