@@ -41,8 +41,8 @@ class WSHandler(tornado.websocket.WebSocketHandler):
     def on_message(self, message):
         try:
             data = json.loads(message)
-            # if "command" in data:
-            #     handle_client_command(data["command"])
+            if "command" in data:
+                handle_client_command(data["command"])
         except Exception as e:
             logger.exception("Failed to process WebSocket message")
 
