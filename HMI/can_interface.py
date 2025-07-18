@@ -6,14 +6,26 @@ import time
 import queue
 
 # Setup logger
-logger = logging.getLogger("CANReader")
+logger = logging.getLogger("CANinterface")
 logger.setLevel(logging.DEBUG)
-logger.debug("CANReader module loaded")
+logger.debug("CANinterface module loaded")
 
-class CANReader:
-    def __init__(self, bus_channel='can1', bustype='socketcan'):
-        self.bus = can.interface.Bus(channel=bus_channel, bustype=bustype)
-        logger.info(f"CAN bus initialized on {bus_channel} with bustype {bustype}")
+class CANinterface:
+    def __init__(self, channel='can1', bitrate = 250000):
+        if 'win' in sys.platform:
+            device = 'pcan'           # The PCAN Drivers must be installed in Windows
+            channel = 'PCAN_USBBUS1'  # Update this to your specific channel
+        else:
+            device = 'socketcan'
+            channel = channel # Change this if there are more than 1 CAN adapter
+          # Set the bitrate to 2500000 for all NMEA2000
+        try:
+            self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate)
+            logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
+        except:
+            logger.exception("CAN Interface Error: Please be sure hardware is plugged in.")
+            self.bus = None
+
         self.listeners = []
 
         # Track last-received time by PGN

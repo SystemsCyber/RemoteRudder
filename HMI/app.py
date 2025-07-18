@@ -14,17 +14,16 @@ import os
 import json
 import logging
 
-from can_reader import CANReader
-from can_writer import CANWriter    
+from can_interface import CANinterface
 
 # Setup logger
-logger = logging.getLogger("CANReader")
+logger = logging.getLogger("CANinterface")
 logger.setLevel(logging.DEBUG)
 logging.basicConfig(level=logging.DEBUG)
 
 clients = set()
-can_writer = CANWriter(bus_channel='can1', bustype='socketcan')
-   
+can_interface = CANinterface()
+
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("autopilot.html")
@@ -45,7 +44,7 @@ class WSHandler(tornado.websocket.WebSocketHandler):
             if "command" in data:
                 handle_client_command(data["command"])
             elif "heading_goal" in data:
-                can_writer.set_goal(data["heading_goal"])
+                can_interface.set_goal(data["heading_goal"])
                 broadcast_can_message(data={"heading_goal": data["heading_goal"]})
         except Exception as e:
             logger.exception("Failed to process WebSocket message")
@@ -53,13 +52,13 @@ class WSHandler(tornado.websocket.WebSocketHandler):
 def handle_client_command(command):
     logger.info(f"Handling command: {command}")
     if command == "rudder_left":
-        can_writer.adjust_goal(-5)
+        can_interface.adjust_goal(-5)
     elif command == "rudder_right":
-        can_writer.adjust_goal(5)
+        can_interface.adjust_goal(5)
     elif command == "servo_enable":
-        can_writer.set_servo_enabled(True)
+        can_interface.set_servo_enabled(True)
     elif command == "servo_disable":
-        can_writer.set_servo_enabled(False)
+        can_interface.set_servo_enabled(False)
     elif command == "goal_set":
         try:
             goal = float(command.split(":")[1])
@@ -80,10 +79,20 @@ def make_app():
 
 def broadcast_can_message(data):
     if 'steering_goal' in data:
-        can_writer.current_goal= data['steering_goal']
+        can_interface.current_goal= data['steering_goal']
     for c in clients:
         c.write_message(json.dumps(data))
 
+def handle_client_command(command):
+    logger.info(f"Handling command: {command}")
+    if command == "rudder_left":
+        can_interface.adjust_goal(-5)
+    elif command == "rudder_right":
+        can_interface.adjust_goal(5)
+    elif command == "servo_enable":
+        can_interface.set_servo_enabled(True)
+    elif command == "servo_disable":
+        can_interface.set_servo_enabled(False)
 
 
 async def main():
@@ -91,9 +100,8 @@ async def main():
     server = tornado.httpserver.HTTPServer(app)
     server.listen(5000)
 
-    can_reader = CANReader(bus_channel='can1', bustype='socketcan')
-    can_reader.add_listener(broadcast_can_message)
-    await can_reader.read_loop()
+    can_interface.add_listener(broadcast_can_message)
+    await can_interface.read_loop()
 
 if __name__ == "__main__":
     tornado.ioloop.IOLoop.current().run_sync(main)
