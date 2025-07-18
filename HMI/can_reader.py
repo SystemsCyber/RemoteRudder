@@ -3,6 +3,7 @@ import asyncio
 import logging
 import struct
 import time
+import sys
 
 # Setup logger
 logger = logging.getLogger("CANReader")
@@ -10,10 +11,24 @@ logger.setLevel(logging.DEBUG)
 logger.debug("CANReader module loaded")
 
 class CANReader:
-    def __init__(self, bus_channel='can1', bustype='socketcan'):
-        self.bus = can.interface.Bus(channel=bus_channel, bustype=bustype)
-        logger.info(f"CAN bus initialized on {bus_channel} with bustype {bustype}")
+    def __init__(self, bitrate = 250000):
+        if 'win' in sys.platform:
+            device = 'pcan'           # The PCAN Drivers must be installed in Windows
+            channel = 'PCAN_USBBUS1'  # Update this to your specific channel
+        else:
+            device = 'socketcan'
+            channel = 'can0' # Change this if there are more than 1 CAN adapter
+          # Set the bitrate to 2500000 for all NMEA2000
+        try:
+            self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate)
+            logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
+        except:
+            logger.exception("CAN Interface Error: Please be sure hardware is plugged in.")
+            self.bus = None
+
         self.listeners = []
+        self.current_goal = 0.0  # Start at 0 degrees
+        self.servo_enabled = False  # track state
 
         # Track last-received time by PGN
         self.watch_ids = {
@@ -29,6 +44,28 @@ class CANReader:
 
     def add_listener(self, callback):
         self.listeners.append(callback)
+
+    def adjust_goal(self, delta_degrees):
+        self.current_goal += delta_degrees
+        self.send_goal()
+    
+    def set_servo_enabled(self, enable):
+        self.servo_enabled = enable
+        logger.info(f"Servo {'enabled' if enable else 'disabled'}")
+        self.send_goal()  # re-send current goal with updated enable byte
+
+    def send_goal(self):
+        angle_raw = int((self.current_goal * 1000) + 0x80000000) & 0xFFFFFFFF
+        angle_bytes = angle_raw.to_bytes(4, byteorder='little')
+        enable_byte = b'\x45' if self.servo_enabled else b'\x00'
+
+        data = angle_bytes + enable_byte
+        msg = can.Message(arbitration_id=0x0CF34155, data=data, is_extended_id=True)
+        try:
+            self.bus.send(msg)
+            logger.info(f"Sent CAN steering goal: {self.current_goal:.1f}°  {data.hex()}")
+        except can.CanError as e:
+            logger.error(f"CAN send failed: {e}")
 
     async def read_loop(self):
         reader = can.AsyncBufferedReader()
