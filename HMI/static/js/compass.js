@@ -85,12 +85,10 @@
       if ('steering_angle' in data && 'steering_goal' in data && 'servo_enabled' in data) {
         try {
           angle_string = data.steering_angle.toFixed(0) + '°';
+          servoEnabled = data.servo_enabled;
+          setServoState(servoEnabled);
         } catch (error) {
           angle_string = 'ERROR';
-        }
-        if (typeof data.servo_enabled !== "undefined") {
-            servoEnabled = data.servo_enabled;
-            setServoState(servoEnabled);
         }
         
         let steering_goal_string = '****'; // default value
