@@ -76,7 +76,6 @@ def make_app():
     static_path="static",
     debug=True)
 
-
 def broadcast_can_message(data):
     if 'steering_goal' in data:
         can_interface.current_goal= data['steering_goal']
