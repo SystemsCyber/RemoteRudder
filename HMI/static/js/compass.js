@@ -208,7 +208,7 @@
 
     servoToggleBtn.classList.add("disabled");
 
-    /* ── set up buttons for goal adjustment ──────────────── */
+    /* set up buttons for goal adjustment*/
     const btnPort  = document.getElementById('btnPortGoal');
     const btnStar  = document.getElementById('btnStarGoal');
 
@@ -231,8 +231,8 @@
       /* Screen angle (0° = up) */
       const dx = x;
       const dy = -y;
-      let ang  = Math.atan2(dx, dy) * 180 / Math.PI;    // −180…180
-      desired_goal = clamp360(ang+heading); // 0…360
+      let ang  = Math.atan2(dx, dy) * 180 / Math.PI;    
+      desired_goal = clamp360(ang+heading); 
       socket.send(JSON.stringify({ heading_goal: desired_goal }));
       
     }
