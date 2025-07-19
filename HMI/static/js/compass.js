@@ -241,7 +241,8 @@
         } 
     });
 
-    servoToggleBtn.classList.add("disabled");
+    setServoState(servoEnabled)
+    setAutopilotState(autopilotEngaged)
 
     /* set up buttons for goal adjustment*/
     const btnPort  = document.getElementById('btnPortGoal');

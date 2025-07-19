@@ -4,6 +4,9 @@ import struct
 import time
 import sys
 import threading
+import csv
+import os
+import datetime
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -21,9 +24,14 @@ class Autopilot():
         self.heading_error = 0 #degrees
         self.steering_shaft_max = 0
         self.steering_shaft_min = 0
+        self.shaft_goal = 0
+        self.current_shaft = 0
         self.rudder_count_max = 0
         self.rudder_count_min = 0
         self.counter = 0
+        self.error_list = []
+        self.time_list = []
+        self.error_list_length = 1000
 
         self._run_thread = None
         self._stop_event = threading.Event()
@@ -35,8 +43,31 @@ class Autopilot():
         self._integral = 0.0
         self._prev_error = 0.0
         self._last_time = time.time()
+        self.start_time = time.time()
         
+        self.init_logger()
     
+    def init_logger(self, log_dir="logs"):
+        os.makedirs(log_dir, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_path = os.path.join(log_dir, f"autopilot_log_{timestamp}.csv")
+
+        self.log_file = open(log_path, mode='w', newline='')
+        self.csv_writer = csv.writer(self.log_file)
+        
+        # Write CSV header
+        self.csv_writer.writerow([
+            "timestamp", "rel_time", "heading_goal", "current_heading", "heading_error",
+            "rudder_goal", "rudder_actual", "shaft_goal", "shaft_actual", "autopilot_engaged"
+        ])
+        self.log_file.flush()
+        logger.info(f"Autopilot CSV log initialized at {log_path}")
+
+    def stop_logger(self):
+        if hasattr(self, 'log_file') and not self.log_file.closed:
+            self.log_file.close()
+            logger.info("Autopilot CSV log closed.")
+
     def adjust_heading_goal(self,delta):
         logger.info(f'Adjust heading goal by {delta}.')
         try:
@@ -94,6 +125,7 @@ class Autopilot():
 
     def stop(self):
         self._stop_event.set()
+        self.stop_logger()
         logger.info("Autopilot stop signal sent.")
     
     def set_rudder_counts(self, min_val, max_val):
@@ -116,25 +148,61 @@ class Autopilot():
                 self.heading_error += 360
             elif self.heading_error > 180:
                 self.heading_error -= 360
+            
             self.rudder_goal = self.compute_rudder_command()
             self.broadcast_status_message()
             logger.debug(f"heading error: {self.heading_error:.2f}, Computed rudder goal: {self.rudder_goal:.2f}")
             if self.autopilot_engaged == True:
-                # Generate a command and broadcast the steeing
-
-                self.can_interface.set_shaft_goal(self.rudder_goal)
+                # Generate a command and broadcast the steering
+                self.shaft_goal = self.map_rudder_to_steering(self.rudder_goal)
+                self.can_interface.set_shaft_goal(self.shaft_goal)
                 self.can_interface.send_shaft_goal()
                 logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
+            
+            self.log_data()
 
-        
+    
+    def log_data(self):
+        now = datetime.datetime.now().isoformat()
+        rel_time = time.time() - self.start_time
+        self.csv_writer.writerow([
+            now,
+            rel_time,
+            round(self.heading_goal, 2),
+            round(self.current_heading, 2),
+            round(self.heading_error, 2),
+            round(self.rudder_goal, 2),
+            round(self.current_rudder, 2),
+            round(self.shaft_goal,1),
+            int(self.autopilot_engaged)
+        ])
+        self.log_file.flush()    
+
     def compute_rudder_command(self):
         current_time = time.time()
         dt = current_time - self._last_time
         self._last_time = current_time
-
+        
         error = self.heading_error
-        self._integral += error * dt
-        derivative = (error - self._prev_error) / dt if dt > 0 else 0.0
+        
+        self.time_list.append(current_time)
+        self.error_list.append(error)
+        if len(self.error_list) <= 1:
+            return self.Kp * error
+
+        if len(self.error_list) > self.error_list_length:
+            self.time_list.pop(0)
+            self.error_list.pop(0)
+            
+        self._integral = 0
+        for i in range(1, len(self.time_list)):
+            dt = self.time_list[i] - self.time_list[i-1]
+            avg_val = (self.error_list[i] + self.error_list[i-1]) / 2
+            self._integral += avg_val * dt
+
+        derivative = self.compute_slope(self.time_list[-4:], self.error_list[-4:])
+
+        # derivative = (error - self._prev_error) / dt if dt > 0 else 0.0
         self._prev_error = error
 
         rudder_command = (
@@ -166,20 +234,39 @@ class Autopilot():
         logger.debug(f"rudder_angle: {rudder_angle}")
         return rudder_angle
     
-    def map_rudder_to_steering(self, rudder_angle):
+    def map_rudder_to_steering(self, rudder_count):
+        '''
+        Converts the rudder position into steering shaft position
+        '''
         rudder_range = self.rudder_count_max - self.rudder_count_min
         shaft_range = self.steering_shaft_max - self.steering_shaft_min
         if rudder_range == 0: #degrees
             return 0
 
-        ratio = (rudder_angle - self.rudder_count_min) / rudder_range
+        ratio = (rudder_count - self.rudder_count_min) / rudder_range
         shaft_angle = self.steering_shaft_min + ratio * (self.steering_shaft_max - self.steering_shaft_min)
         logger.debug(f"shaft_angle: {shaft_angle}")
         
         #Prevent overturning. 
-        if shaft_angle > 1260:
-            shaft_angle = 1260
-        elif shaft_angle < -1260:
-            shaft_angle = -1260
+        if shaft_angle > 3200:
+            shaft_angle = 3200
+        elif shaft_angle < -3200:
+            shaft_angle = -3200
         return shaft_angle
+
+    def compute_slope(self, xs, ys):
+        n = len(xs)
+        if n != len(ys) or n < 2:
+            raise ValueError("Need at least two points")
+
+        x_mean = sum(xs) / n
+        y_mean = sum(ys) / n
+
+        numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, ys))
+        denominator = sum((x - x_mean) ** 2 for x in xs)
+
+        if denominator == 0:
+            return float('inf')  # or raise an exception
+
+        return numerator / denominator
 
