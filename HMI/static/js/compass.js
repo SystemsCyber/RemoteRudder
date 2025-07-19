@@ -99,24 +99,13 @@
       if ('steering_angle' in data && 'steering_goal' in data && 'servo_enabled' in data) {
         try {
           angle_string = data.steering_angle.toFixed(0) + '°';
+          steering_goal_string = data.steering_goal.toFixed(0) + '°';
           servoEnabled = data.servo_enabled;
           setServoState(servoEnabled);
         } catch (error) {
           angle_string = 'ERROR';
+          steering_goal_string = 'ERROR';
         }
-        
-        let steering_goal_string = '****'; // default value
-        if (data.servo_enabled) {
-          try {
-            steering_goal_string = data.steering_goal.toFixed(0) + '°';
-          } catch (error) {
-            steering_goal_string = 'ERROR';
-          }
-        }
-        else {
-          steering_goal_string = '****';  
-        }  
-        
         updateSteeringUI(angle_string, steering_goal_string);
 
       }
@@ -178,11 +167,10 @@
     autopilotBtn.addEventListener("click", () => {
       if (autopilotEngaged){
         socket.send(JSON.stringify({ command: "autopilot_disable"}));
-        console.log("Sending autopilot_disable")
       }
       else {
         socket.send(JSON.stringify({ command: "autopilot_enable"}));
-        console.log("Sending autopilot_enable")
+        rudderButtons.forEach(btn => btn.disabled = true);
       }
     });
 
@@ -201,6 +189,7 @@
             servoBtn.classList.add("disabled");
             servoStatus.textContent = "Servo is Disabled";
             rudderButtons.forEach(btn => btn.disabled = true);
+            
         }
     }
 
@@ -210,6 +199,7 @@
             autopilotBtn.classList.remove("disabled");
             autopilotBtn.classList.add("enabled");
             autopilotStatus.textContent = "Autopilot is Engaged";
+
         } else {
             autopilotBtn.innerHTML = "Engage<br>Autopilot";
             autopilotBtn.classList.remove("enabled");
@@ -238,7 +228,7 @@
 
 
     servoBtn.addEventListener("click", () => {
-        //servoEnabled = !servoEnabled;
+        servoEnabled = !servoEnabled;
         setServoState(servoEnabled);
         if (servoEnabled) {
             // Send the new state to the server
@@ -247,6 +237,7 @@
         else {
             // Send the new state to the server
             socket.send(JSON.stringify({ command: "servo_disable"}));
+            socket.send(JSON.stringify({ command: "autopilot_disable"}));
         } 
     });
 
