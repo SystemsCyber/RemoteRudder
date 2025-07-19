@@ -25,6 +25,7 @@ logging.basicConfig(level=logging.DEBUG)
 clients = set()
 can_interface = CANinterface()
 autopilot = Autopilot(can_interface)
+autopilot.start()
 
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
@@ -68,9 +69,11 @@ def handle_client_command(command):
     elif command == "servo_disable":
         can_interface.set_servo_enabled(False)
     elif command == "autopilot_enable":
-        autopilot.autopilot_enable = True
+        autopilot.autopilot_engaged = True
+        logger.info("Received Request to Enable Autopilot.")
     elif command == "autopilot_disable":
-        autopilot.autopilot_enable = False
+        autopilot.autopilot_engaged = False
+        logger.info("Received Request to Disable Autopilot.")
 
             
 def broadcast_can_message(data):

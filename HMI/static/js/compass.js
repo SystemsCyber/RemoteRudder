@@ -22,9 +22,23 @@
   boat.src     = '/static/images/boat.png'; // <- adjust if needed
   const HANDLE_R = 30; // radius of the draggable handle
   const dial       = { dragging:false };
+  let autopilotEngaged = false;
+  let servoEnabled = false;
 
   window.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded: compass.js');
+
+    const engineSpeed = document.getElementById('EngineSpeed');
+    const servoBtn = document.getElementById("servoToggleBtn");
+    const servoStatus = document.getElementById("servoEnabled");
+    const autopilotStatus = document.getElementById("autopilotStatus")
+    const autopilotBtn = document.getElementById("autopilotBtn");
+    
+    const rudderButtons = [
+        document.getElementById("btnPortRudder"),
+        document.getElementById("btnStarRudder")
+    ];
+
     const socket = new WebSocket('ws://' + location.hostname + ':5000/ws');
   
     socket.onopen = function () {
@@ -148,15 +162,31 @@
           heading_goal_string = 'ERROR';
         }
       }
+
+      if ('autopilot_engaged' in data) {
+        try {
+          autopilotEngaged = data.autopilot_engaged;
+        } catch (error) {
+          autopilotEngaged = false;
+          console.log(error)
+        }
+        setAutopilotState(autopilotEngaged)
+      }
     
     }
-    const engineSpeed = document.getElementById('EngineSpeed');
-    const servoBtn = document.getElementById("servoToggleBtn");
-    const servoStatus = document.getElementById("servoEnabled");
-    const rudderButtons = [
-        document.getElementById("btnPortRudder"),
-        document.getElementById("btnStarRudder")
-    ];
+
+    autopilotBtn.addEventListener("click", () => {
+      if (autopilotEngaged){
+        socket.send(JSON.stringify({ command: "autopilot_disable"}));
+        console.log("Sending autopilot_disable")
+      }
+      else {
+        socket.send(JSON.stringify({ command: "autopilot_enable"}));
+        console.log("Sending autopilot_enable")
+      }
+    });
+
+
 
     function setServoState(enabled) {
         if (enabled) {
@@ -171,6 +201,20 @@
             servoBtn.classList.add("disabled");
             servoStatus.textContent = "Servo is Disabled";
             rudderButtons.forEach(btn => btn.disabled = true);
+        }
+    }
+
+    function setAutopilotState(enabled) {
+        if (enabled) {
+            autopilotBtn.innerHTML = "Disengage<br>Autopilot";
+            autopilotBtn.classList.remove("disabled");
+            autopilotBtn.classList.add("enabled");
+            autopilotStatus.textContent = "Autopilot is Engaged";
+        } else {
+            autopilotBtn.innerHTML = "Engage<br>Autopilot";
+            autopilotBtn.classList.remove("enabled");
+            autopilotBtn.classList.add("disabled");
+            autopilotStatus.textContent = "Autopilot Disengaged";
         }
     }
 
@@ -191,10 +235,10 @@
         console.log("Starboard Rudder button clicked");
     });
 
-    let servoEnabled = false;
+
 
     servoBtn.addEventListener("click", () => {
-        servoEnabled = !servoEnabled;
+        //servoEnabled = !servoEnabled;
         setServoState(servoEnabled);
         if (servoEnabled) {
             // Send the new state to the server

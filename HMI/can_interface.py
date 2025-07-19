@@ -21,7 +21,7 @@ class CANinterface:
             channel = channel # Change this if there are more than 1 CAN adapter
           # Set the bitrate to 2500000 for all NMEA2000
         try:
-            self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate)
+            self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate, receive_own_messages=True)
             logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
         except:
             logger.warning("CAN Interface Error: Please be sure hardware is plugged in.")
@@ -203,6 +203,20 @@ class CANinterface:
             
             logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {heading:.2f}")
             return {"heading": heading}
-
+        
+        elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
+            engaged = bool(msg.data[0])
+            heading_goal = struct.unpack_from("<H", msg.data, 1)[0] / 100.0
+            heading_error = struct.unpack_from("<h", msg.data, 3)[0] / 100.0
+            rudder_goal = struct.unpack_from("<h", msg.data, 5)[0] / 100.0
+            counter = msg.data[7]
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Autopilot engaged: {engaged}, heading_goal: {heading_goal:.2f}, heading_error: {heading_error:.2f} ")
+            return {
+                "autopilot_engaged": engaged,
+                "heading_goal": heading_goal,
+                "heading_error": heading_error,
+                "rudder_goal": rudder_goal,
+            }
+        
         else:
             return None
