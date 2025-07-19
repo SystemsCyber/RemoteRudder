@@ -214,13 +214,13 @@
 
     if (btnPort) {
       btnPort.addEventListener('click', () => {
-        socket.send(JSON.stringify({ command: "goal_left" }));
+        socket.send(JSON.stringify({ command: "heading_left" }));
       });
     }
 
     if (btnStar) {
       btnStar.addEventListener('click', () => {
-        socket.send(JSON.stringify({ command: "goal_right" }));
+        socket.send(JSON.stringify({ command: "heading_right" }));
       });
     }
 

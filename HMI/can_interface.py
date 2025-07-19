@@ -28,7 +28,7 @@ class CANinterface:
             sys.exit()
 
         self.listeners = []
-        self.current_goal = 0.0  # Start at 0 degrees
+        self.shaft_goal = 0.0  # Start at 0 degrees
         self.servo_enabled = False  # track state
 
         # Track last-received time by PGN
@@ -45,28 +45,30 @@ class CANinterface:
         self.timeout_interval = 2.0
         self.GUI_TIMEOUT = 0.35
         self.rpm_start_time = time.time()
-        self.steering_start_time = time.time()
         self.compass_heading = 0.0
         self.boat_speed = 0.0
         self.heading_correction = None
         self.averaging_window = 100  # Number of samples for averaging
         self.heading_history = queue.Queue(maxsize=100)
         self.COG_history = queue.Queue(maxsize=100)
+        self.max_steering_angle = 0
+        self.min_steering_angle = 0
+        
 
     def add_listener(self, callback):
         self.listeners.append(callback)
 
-    def adjust_goal(self, delta_degrees):
-        self.current_goal += delta_degrees
-        self.send_goal()
+    def adjust_shaft_goal(self, delta_degrees):
+        self.shaft_goal += delta_degrees
+        self.send_shaft_goal()
     
     def set_servo_enabled(self, enable):
         self.servo_enabled = enable
         logger.info(f"Servo {'enabled' if enable else 'disabled'}")
-        self.send_goal()  # re-send current goal with updated enable byte
+        self.send_shaft_goal()  # re-send current goal with updated enable byte
 
-    def send_goal(self):
-        angle_raw = int((self.current_goal * 1000) + 0x80000000) & 0xFFFFFFFF
+    def send_shaft_goal(self):
+        angle_raw = int((self.shaft_goal * 1000) + 0x80000000) & 0xFFFFFFFF
         angle_bytes = angle_raw.to_bytes(4, byteorder='little')
         enable_byte = b'\x45' if self.servo_enabled else b'\x00'
 
@@ -74,7 +76,7 @@ class CANinterface:
         msg = can.Message(arbitration_id=0x0CF34155, data=data, is_extended_id=True)
         try:
             self.bus.send(msg)
-            logger.info(f"Sent CAN steering goal: {self.current_goal:.1f}°  {data.hex()}")
+            logger.info(f"Sent CAN steering goal: {self.shaft_goal:.1f}°  {data.hex()}")
         except can.CanError as e:
             logger.error(f"CAN send failed: {e}")
 
@@ -113,8 +115,6 @@ class CANinterface:
     def process_message(self, msg):
         now = time.time()
         if msg.arbitration_id == 0x18F01D21:  # steering
-            self.steering_start_time = now
-            
             angle = (struct.unpack('<L', msg.data[0:4])[0] - 0x80000000) / 1000
             goal_bytes = msg.data[4:8]
             if goal_bytes == b'\xFF\xFF\xFF\xFF':
@@ -123,8 +123,12 @@ class CANinterface:
             else:  # assume enabled if not FFs
                 enabled = True
                 goal = (struct.unpack('<L', goal_bytes)[0] - 0x80000000) / 1000
+            if angle > self.max_steering_angle:
+                self.max_steering_angle = angle
+            if angle < self.min_steering_angle:
+                self.min_steering_angle = angle
             logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Steering Angle: {angle:.2f}, Steering Goal: {goal:.2f}, Servo {'enabled' if enabled else 'disabled'}")
-            return {"steering_angle": angle, "steering_goal": goal, "servo_enabled": enabled}
+            return {"steering_angle": angle, "steering_goal": goal, "servo_enabled": enabled, "max_steering_angle":self.max_steering_angle, "min_steering_angle":self.min_steering_angle, }
            
         elif msg.arbitration_id == 0x19F10D13:  # rudder
             rudder_count = msg.data[0]
@@ -198,7 +202,7 @@ class CANinterface:
                 heading = heading_raw
             
             logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {heading:.2f}")
-            return {"heading": round(heading)}
+            return {"heading": heading}
 
         else:
             return None

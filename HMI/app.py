@@ -15,6 +15,7 @@ import json
 import logging
 
 from can_interface import CANinterface
+from autopilot import Autopilot
 
 # Setup logger
 logger = logging.getLogger("CANinterface")
@@ -23,6 +24,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 clients = set()
 can_interface = CANinterface()
+autopilot = Autopilot(can_interface)
 
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
@@ -44,29 +46,46 @@ class WSHandler(tornado.websocket.WebSocketHandler):
             if "command" in data:
                 handle_client_command(data["command"])
             elif "heading_goal" in data:
-                can_interface.set_goal(data["heading_goal"])
-                broadcast_can_message(data={"heading_goal": data["heading_goal"]})
+                autopilot.set_heading_goal(data["heading_goal"])
+                broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
         except Exception as e:
             logger.exception("Failed to process WebSocket message")
 
 def handle_client_command(command):
     logger.info(f"Handling command: {command}")
     if command == "rudder_left":
-        can_interface.adjust_goal(-5)
+        can_interface.adjust_shaft_goal(-5)
     elif command == "rudder_right":
-        can_interface.adjust_goal(5)
+        can_interface.adjust_shaft_goal(5)
+    elif command == "heading_right":
+        autopilot.adjust_heading_goal(+1)
+        broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
+    elif command == "heading_left":
+        autopilot.adjust_heading_goal(-1)
+        broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
     elif command == "servo_enable":
         can_interface.set_servo_enabled(True)
     elif command == "servo_disable":
         can_interface.set_servo_enabled(False)
-    elif command == "goal_set":
-        try:
-            goal = float(command.split(":")[1])
+    elif command == "autopilot_enable":
+        autopilot.autopilot_enable = True
+    elif command == "autopilot_disable":
+        autopilot.autopilot_enable = False
+
             
-            logger.info(f"Set steering goal to {goal} degrees")
-        except ValueError:
-            logger.error("Invalid goal value received")
-            
+def broadcast_can_message(data):
+    if 'steering_goal' in data:
+        # send new goal to the can interface
+        can_interface.current_goal= data['steering_goal']
+    elif 'heading' in data:
+        autopilot.heading = data['heading']
+    elif "max_steering_angle" in data:
+        autopilot.max_steering_angle = data["max_steering_angle"]
+    elif "min_steering_angle" in data:
+        autopilot.min_steering_angle = data["min_steering_angle"]
+    for c in clients:
+        c.write_message(json.dumps(data))
+
 def make_app():
     return tornado.web.Application([
         (r"/", MainHandler),
@@ -75,24 +94,6 @@ def make_app():
     template_path="templates",
     static_path="static",
     debug=True)
-
-def broadcast_can_message(data):
-    if 'steering_goal' in data:
-        can_interface.current_goal= data['steering_goal']
-    for c in clients:
-        c.write_message(json.dumps(data))
-
-def handle_client_command(command):
-    logger.info(f"Handling command: {command}")
-    if command == "rudder_left":
-        can_interface.adjust_goal(-5)
-    elif command == "rudder_right":
-        can_interface.adjust_goal(5)
-    elif command == "servo_enable":
-        can_interface.set_servo_enabled(True)
-    elif command == "servo_disable":
-        can_interface.set_servo_enabled(False)
-
 
 async def main():
     app = make_app()
