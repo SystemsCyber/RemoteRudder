@@ -18,13 +18,14 @@ from can_interface import CANinterface
 from autopilot import Autopilot
 
 # Setup logger
-logger = logging.getLogger("CANinterface")
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logging.basicConfig(level=logging.DEBUG)
 
 clients = set()
 can_interface = CANinterface()
 autopilot = Autopilot(can_interface)
+autopilot.start()
 
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
@@ -67,22 +68,26 @@ def handle_client_command(command):
         can_interface.set_servo_enabled(True)
     elif command == "servo_disable":
         can_interface.set_servo_enabled(False)
+        autopilot.autopilot_engaged = False
     elif command == "autopilot_enable":
-        autopilot.autopilot_enable = True
+        autopilot.autopilot_engaged = True
+        logger.info("Received Request to Enable Autopilot.")
     elif command == "autopilot_disable":
-        autopilot.autopilot_enable = False
+        autopilot.autopilot_engaged = False
+        logger.info("Received Request to Disable Autopilot.")
 
             
 def broadcast_can_message(data):
-    if 'steering_goal' in data:
+    if 'steering_goal' in data and "min_steering_angle" in data and "min_steering_angle" in data:
         # send new goal to the can interface
         can_interface.current_goal= data['steering_goal']
-    elif 'heading' in data:
-        autopilot.heading = data['heading']
-    elif "max_steering_angle" in data:
-        autopilot.max_steering_angle = data["max_steering_angle"]
-    elif "min_steering_angle" in data:
-        autopilot.min_steering_angle = data["min_steering_angle"]
+        autopilot.set_steering_shaft_limits(data["min_steering_angle"], data["max_steering_angle"])
+    elif 'COG' in data:
+        autopilot.set_heading(data['COG'])
+    elif "rudder_value_min" in data and "rudder_value_max" in data:
+        autopilot.set_rudder_counts(data["rudder_value_min"], data["rudder_value_max"])
+
+        
     for c in clients:
         c.write_message(json.dumps(data))
 

@@ -7,7 +7,7 @@ import sys
 import queue
 
 # Setup logger
-logger = logging.getLogger("CANinterface")
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.debug("CANinterface module loaded")
 
@@ -21,7 +21,7 @@ class CANinterface:
             channel = channel # Change this if there are more than 1 CAN adapter
           # Set the bitrate to 2500000 for all NMEA2000
         try:
-            self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate)
+            self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate, receive_own_messages=True)
             logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
         except:
             logger.warning("CAN Interface Error: Please be sure hardware is plugged in.")
@@ -54,6 +54,7 @@ class CANinterface:
         self.max_steering_angle = 0
         self.min_steering_angle = 0
         
+        self.disable_servo()
 
     def add_listener(self, callback):
         self.listeners.append(callback)
@@ -65,14 +66,29 @@ class CANinterface:
     def set_servo_enabled(self, enable):
         self.servo_enabled = enable
         logger.info(f"Servo {'enabled' if enable else 'disabled'}")
-        self.send_shaft_goal()  # re-send current goal with updated enable byte
-
+        if self.servo_enabled:
+            self.send_shaft_goal() 
+        else:
+            self.disable_servo() 
+        
+    def set_shaft_goal(self, value):
+        self.shaft_goal = value
+        
     def send_shaft_goal(self):
         angle_raw = int((self.shaft_goal * 1000) + 0x80000000) & 0xFFFFFFFF
         angle_bytes = angle_raw.to_bytes(4, byteorder='little')
-        enable_byte = b'\x45' if self.servo_enabled else b'\x00'
+        enable_byte = b'\x45' #if self.servo_enabled else b'\x00'
 
-        data = angle_bytes + enable_byte
+        data = angle_bytes + enable_byte + b'\xFF'*3
+        msg = can.Message(arbitration_id=0x0CF34155, data=data, is_extended_id=True)
+        try:
+            self.bus.send(msg)
+            logger.info(f"Sent CAN steering goal: {self.shaft_goal:.1f}°  {data.hex()}")
+        except can.CanError as e:
+            logger.error(f"CAN send failed: {e}")
+    
+    def disable_servo(self):
+        data = b'\x00'*8
         msg = can.Message(arbitration_id=0x0CF34155, data=data, is_extended_id=True)
         try:
             self.bus.send(msg)
@@ -125,10 +141,12 @@ class CANinterface:
                 goal = (struct.unpack('<L', goal_bytes)[0] - 0x80000000) / 1000
             if angle > self.max_steering_angle:
                 self.max_steering_angle = angle
+                logger.debug(f"Found new maximum steering angle: {self.max_steering_angle}")
             if angle < self.min_steering_angle:
                 self.min_steering_angle = angle
-            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Steering Angle: {angle:.2f}, Steering Goal: {goal:.2f}, Servo {'enabled' if enabled else 'disabled'}")
-            return {"steering_angle": angle, "steering_goal": goal, "servo_enabled": enabled, "max_steering_angle":self.max_steering_angle, "min_steering_angle":self.min_steering_angle, }
+                logger.debug(f"Found new minimum steering angle: {self.min_steering_angle}")
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Steering Angle: {angle:.2f}, Steering Goal: {goal:.2f}, Servo {'enabled' if enabled else 'disabled'}, max_steering_angle: {self.max_steering_angle}, min_steering_angle: {self.min_steering_angle}")
+            return {"steering_angle": angle, "steering_goal": goal, "servo_enabled": enabled, "max_steering_angle": self.max_steering_angle, "min_steering_angle": self.min_steering_angle, }
            
         elif msg.arbitration_id == 0x19F10D13:  # rudder
             rudder_count = msg.data[0]
@@ -203,6 +221,20 @@ class CANinterface:
             
             logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {heading:.2f}")
             return {"heading": heading}
-
+        
+        elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
+            engaged = bool(msg.data[0])
+            heading_goal = (struct.unpack_from("<H", msg.data, 1)[0] - 0x8000 )/ 100.0
+            heading_error = (struct.unpack_from("<H", msg.data, 3)[0] - 0x8000 )/ 100.0
+            rudder_goal = (struct.unpack_from("<H", msg.data, 5)[0] - 0x8000 )/ 100.0
+            counter = msg.data[7]
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Autopilot engaged: {engaged}, heading_goal: {heading_goal:.2f}, heading_error: {heading_error:.2f}, rudder_goal: {rudder_goal:0.2f} ")
+            return {
+                "autopilot_engaged": engaged,
+                "heading_goal": heading_goal,
+                "heading_error": heading_error,
+                "rudder_goal": rudder_goal,
+            }
+        
         else:
             return None
