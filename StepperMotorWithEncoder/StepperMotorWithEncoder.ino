@@ -6,7 +6,7 @@
 #define RUDDER_STATUS_MESSAGE_ID     0x19F10D13
 #define EXTERNAL_STEERING_CONTROL_ID 0x0CF34155
 
-#define TOTAL_STEERING_ANGLE 3000
+#define TOTAL_STEERING_ANGLE 2950
 
 //————— Pin definitions —————
 static const uint8_t ENC_CS        = 10;      // AMT22 chip-select 
@@ -49,11 +49,13 @@ static bool SERVO_DIR_State = LOW; // Low = Port (subtract); High to Starboard (
 // timing
 uint32_t lastEncoderMillis = 0;
 uint32_t lastCANTXmillis = 0;
+uint32_t lastStatusTXmillis = 0;
 uint32_t lastCANRXmillis = 0;
 // uint32_t counter = 0;
 static uint32_t now = 0;
 static const uint32_t ENCODER_READ_TIME = 1; //milliseconds
 static const uint32_t CAN_SEND_TIME = 100; //milliseconds
+static const uint32_t STATUS_SEND_TIME = 1000;
 static const uint16_t SERVO_PULSE_WIDTH = 45; //microseconds
 
 
@@ -386,6 +388,9 @@ void loop() {
       //red_state = !red_state;
       red_timer = now;
     }
+  }
+  if (now - lastStatusTXmillis >= STATUS_SEND_TIME) {
+    lastStatusTXmillis = now;
     if (CANBUS.sendMsgBuf(SHAFT_STATUS_MESSAGE_ID, 1, 8, status_data) == CAN_OK) {
       //red_state = !red_state;
       red_timer = now;
