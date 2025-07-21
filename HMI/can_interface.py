@@ -12,7 +12,7 @@ logger.setLevel(logging.DEBUG)
 logger.debug("CANinterface module loaded")
 
 class CANinterface:
-    def __init__(self, channel='can1', bitrate = 250000):
+    def __init__(self, channel='can0', bitrate = 250000):
         if 'win' in sys.platform:
             device = 'pcan'           # The PCAN Drivers must be installed in Windows
             channel = 'PCAN_USBBUS1'  # Update this to your specific channel

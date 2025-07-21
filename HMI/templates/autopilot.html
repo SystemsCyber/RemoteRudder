@@ -12,26 +12,12 @@
             font-size: 60px;
             color: white; /*Font Color*/
             background-color: black;
-            height: 100vh; 
             display: grid;
-            grid-template-columns: 1fr;
-            grid-template-rows: auto 1fr auto;   /* header | main | footer  */
-            grid-template-areas:
-                "hdr"
-                "main"
-                "ftr";
             margin: 0;
+            grid-template-columns: 1fr 3fr 1fr;
             padding: 0;
         }
 
-        .main-grid {
-            grid-area: main;
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 0;
-            height: 100%;
-            align-items: middle;
-        }
 
         #btnPortGoal, #btnStarGoal, #btnPortRudder, #btnStarRudder {
             background-color: transparent;
@@ -44,14 +30,20 @@
             display: grid;
             grid-template-rows: auto 1fr auto;
             place-items: center;
+            max-width: 25%;
+        }
+        .side-col-left {
+            align-items: right;
+        }
+        .side-col-right {
+            align-items: left;
         }
 
         .side-col-left img,
         .side-col-right img {
-            width: 100%;
+            width: 300px;
             height: auto;
             cursor: pointer;
-            max-width: 25lh;
         }
 
         .center-col {
@@ -59,7 +51,8 @@
             align-items: center;
             justify-content: center;
             overflow: hidden;
-             max-width: 50lh;
+            min-width: 1000px;
+            
         }
 
         canvas#compass {
@@ -113,7 +106,6 @@
     </style>
 </head>
 <body>
-    <div class="main-grid">
         <div class="side-col-left" id="left">
             <div class="port-side-row top">
                 <button id="btnPortGoal">
@@ -126,7 +118,7 @@
                 <button id="autopilotBtn">Engage<br>Autopilot</button>
                 <p>
                 Steering Goal:<br>
-                <span style="font-family:monospace; font-size:120px; white-space:pre;" id="steeringGoal">-------</span><br>
+                <span style="font-family:monospace; font-size:120px; white-space:pre;" id="steeringGoal">------</span><br>
                 Steering Val:<br>
                 <span style="font-family:monospace; font-size:120px; white-space:pre;"  id="steeringValue">----</span>
                 </p>
@@ -161,8 +153,7 @@
                 </button>
             </div>
         </div>
-    </div>
-
+    
     <script src="/static/js/socket.io.min.js"></script>
     <script src="/static/js/compass.js"></script>
     <script>
