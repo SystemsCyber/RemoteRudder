@@ -7,7 +7,7 @@ import sys
 import queue
 
 # Setup logger
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('CAN')
 logger.setLevel(logging.DEBUG)
 logger.debug("CANinterface module loaded")
 
@@ -89,7 +89,9 @@ class CANinterface:
             logger.error(f"CAN send failed: {e}")
     
     def disable_servo(self):
-        data = b'\x00'*8
+        angle_raw = int((self.shaft_goal * 1000) + 0x80000000) & 0xFFFFFFFF
+        angle_bytes = angle_raw.to_bytes(4, byteorder='little')
+        data = angle_bytes + b'\x00'*4
         msg = can.Message(arbitration_id=0x0CF34155, data=data, is_extended_id=True)
         try:
             self.bus.send(msg)
@@ -177,7 +179,8 @@ class CANinterface:
             if self.boat_speed > 10 and self.heading_correction is None:
                 self.COG_history.put(COG)
             logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} COG: {COG:.2f}, SOG: {SOG_mph:.2f} mph")
-            return {"SOG": SOG_mph, "COG": COG}
+            if self.boat_speed > 2:
+                return {"SOG": SOG_mph, "COG": COG}
 
         elif msg.arbitration_id == 0x09F8011C:  # GPS Position, Rapid Update. PGN 129025, 100ms update
             lat = struct.unpack('<l', msg.data[0:4])[0] / 10000000 #degrees
@@ -219,10 +222,12 @@ class CANinterface:
                 heading = (heading_raw + self.heading_correction) % 360
             else:
                 heading = heading_raw
-            
-            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {heading:.2f}")
-            return {"heading": heading}
-        
+            if self.boat_speed < 2:
+                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {heading:.2f}")
+                return {"heading": heading}
+            else:
+                return {"SOG": self.boat_speed, "COG": heading}
+
         elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
             engaged = bool(msg.data[0])
             heading_goal = (struct.unpack_from("<H", msg.data, 1)[0] - 0x8000 )/ 100.0

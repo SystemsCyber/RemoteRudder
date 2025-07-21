@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # sudo apt install python3-tornado
 
-print(">>> app.py starting")
 import sys
 sys.stdout.flush()
 
@@ -18,9 +17,8 @@ from can_interface import CANinterface
 from autopilot import Autopilot
 
 # Setup logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger('autopilot')
+logging.basicConfig(level=logging.INFO)
 
 clients = set()
 can_interface = CANinterface()

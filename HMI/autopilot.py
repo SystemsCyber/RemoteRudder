@@ -9,8 +9,8 @@ import os
 import datetime
 
 # Setup logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = logging.getLogger('autopilot')
+logger.setLevel(logging.INFO)
 
 class Autopilot():
     def __init__(self, can_interface):
@@ -26,6 +26,7 @@ class Autopilot():
         self.steering_shaft_min = 1000
         self.shaft_goal = 1500
         self.current_shaft = 1500
+        self.shaft_center = 1425
         self.rudder_count_max = 0
         self.rudder_count_min = 0
         self.counter = 0
@@ -36,7 +37,7 @@ class Autopilot():
         self._run_thread = None
         self._stop_event = threading.Event()
 
-        self.Kp = 10 # Proportional gain
+        self.Kp = 40 # Proportional gain
         self.Ki = 0.05
         self.Kd = .1
 
@@ -157,7 +158,9 @@ class Autopilot():
                 self.can_interface.set_shaft_goal(self.shaft_goal)
                 self.can_interface.send_shaft_goal()
                 logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
-            
+            else:
+                self.heading_goal = self.current_heading
+
             self.log_data()
 
     
@@ -207,7 +210,8 @@ class Autopilot():
         shaft_command = (
             self.Kp * error +
             self.Ki * self._integral +
-            self.Kd * derivative
+            self.Kd * derivative + 
+            self.shaft_center
         )
         if shaft_command < 0:
             shaft_command = 0
