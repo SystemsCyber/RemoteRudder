@@ -51,7 +51,7 @@ class CANinterface:
         self.averaging_window = 100  # Number of samples for averaging
         self.heading_history = queue.Queue(maxsize=100)
         self.COG_history = queue.Queue(maxsize=100)
-        self.max_steering_angle = 0
+        self.max_steering_angle = 2900
         self.min_steering_angle = 0
         
         self.disable_servo()
@@ -60,8 +60,9 @@ class CANinterface:
         self.listeners.append(callback)
 
     def adjust_shaft_goal(self, delta_degrees):
-        self.shaft_goal += delta_degrees
-        self.send_shaft_goal()
+        if self.servo_enabled:
+            self.shaft_goal += delta_degrees
+            self.send_shaft_goal()  
     
     def set_servo_enabled(self, enable):
         self.servo_enabled = enable
