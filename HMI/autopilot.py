@@ -7,10 +7,14 @@ import threading
 import csv
 import os
 import datetime
+import queue
+import statistics
 
 # Setup logger
 logger = logging.getLogger('autopilot')
 logger.setLevel(logging.INFO)
+
+QUEUE_SIZE = 10000
 
 class Autopilot():
     def __init__(self, can_interface):
@@ -30,6 +34,8 @@ class Autopilot():
         self.rudder_count_max = 0
         self.rudder_count_min = 0
         self.counter = 0
+        self.heading_list = []
+        self.shaft_list = []
         self.error_list = []
         self.time_list = []
         self.error_list_length = 1000
@@ -144,6 +150,16 @@ class Autopilot():
     def run(self):
         while True:
             time.sleep(0.1)
+            self.heading_list.append(self.current_heading)
+            self.shaft_list.append(self.can_interface.shaft_value)
+            if len(self.heading_list) >= QUEUE_SIZE:
+                shaft_mean = statistics.mean(self.shaft_list)
+                heading_mean = statistics.mean(self.heading_list)
+                heading_std = statistics.stdev(self.heading_list, xbar=heading_mean)
+                self.heading_list = []
+                self.shaft_list = []
+                if heading_std < 2: # This is an indicator the boat is going straight
+                    self.shaft_center = shaft_mean
             self.heading_error = self.heading_goal - self.current_heading
             if self.heading_error < -180:
                 self.heading_error += 360

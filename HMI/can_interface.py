@@ -53,6 +53,7 @@ class CANinterface:
         self.COG_history = queue.Queue(maxsize=100)
         self.max_steering_angle = 2900
         self.min_steering_angle = 0
+        self.shaft_value = self.max_steering_angle/2
         
         self.disable_servo()
 
@@ -135,6 +136,7 @@ class CANinterface:
         now = time.time()
         if msg.arbitration_id == 0x18F01D21:  # steering
             angle = (struct.unpack('<L', msg.data[0:4])[0] - 0x80000000) / 1000
+            self.shaft_value = angle
             goal_bytes = msg.data[4:8]
             if goal_bytes == b'\xFF\xFF\xFF\xFF':
                 enabled = False
