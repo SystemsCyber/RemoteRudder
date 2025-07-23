@@ -2,7 +2,7 @@ import os
 import re
 from pathlib import Path
 
-REMOVE_IDS = {"18FF50E0", "0CF34155"}
+REMOVE_IDS = ["18FF50E0", "0CF34155"]
 INPUT_DIR = "./"        # Adjust this as needed
 OUTPUT_FILE = "combined_filtered.log"
 INTER_FILE_GAP = 0.001              # 1ms
@@ -20,13 +20,16 @@ def process_file(path):
     with open(path, "r") as f:
         for line in f:
             parts = line.strip().split()
-            if len(parts) >= 3 and parts[2].upper() not in REMOVE_IDS:
+            id = parts[2].split("#")[0].upper()
+            if len(parts) >= 3 and id not in REMOVE_IDS:
                 ts = extract_timestamp(line)
                 if ts is not None:
                     if base_time is None:
                         base_time = ts
                     rel_time = ts - base_time
                     filtered_lines.append((rel_time, line))
+            else:
+                pass
     return filtered_lines
 
 def main():
