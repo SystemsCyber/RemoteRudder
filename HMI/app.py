@@ -26,7 +26,7 @@ logger = logging.getLogger('autopilot')
 logging.basicConfig(level=logging.INFO)
 
 clients = set()
-can_interface = CANinterface(channel='vcan0')
+can_interface = CANinterface(channel='can0')
 autopilot = Autopilot(can_interface)
 autopilot.start()
 
