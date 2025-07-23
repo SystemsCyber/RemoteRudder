@@ -82,8 +82,6 @@ def handle_client_command(command):
             
 def broadcast_can_message(data):
     if 'steering_goal' in data and "min_steering_angle" in data and "min_steering_angle" in data:
-        # send new goal to the can interface
-        #can_interface.current_goal= data['steering_goal']
         autopilot.set_steering_shaft_limits(data["min_steering_angle"], data["max_steering_angle"])
     elif 'COG' in data:
         autopilot.set_heading(data['COG'])
