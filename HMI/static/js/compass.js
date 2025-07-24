@@ -22,9 +22,19 @@
   boat.src     = '/static/images/boat.png'; // <- adjust if needed
   const HANDLE_R = 30; // radius of the draggable handle
   const dial       = { dragging:false };
+  let autopilotEngaged = false;
+  let servoEnabled = false;
 
   window.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded: compass.js');
+
+    const engineSpeed = document.getElementById('EngineSpeed');
+    const servoBtn = document.getElementById("servoToggleBtn");
+    const servoStatus = document.getElementById("servoEnabled");
+    const autopilotStatus = document.getElementById("autopilotStatus")
+    const autopilotBtn = document.getElementById("autopilotBtn");
+    
+
     const socket = new WebSocket('ws://' + location.hostname + ':5000/ws');
   
     socket.onopen = function () {
@@ -85,24 +95,17 @@
       if ('steering_angle' in data && 'steering_goal' in data && 'servo_enabled' in data) {
         try {
           angle_string = data.steering_angle.toFixed(0) + '°';
-          servoEnabled = data.servo_enabled;
-          setServoState(servoEnabled);
         } catch (error) {
           angle_string = 'ERROR';
         }
-        
-        let steering_goal_string = '****'; // default value
-        if (data.servo_enabled) {
-          try {
-            steering_goal_string = data.steering_goal.toFixed(0) + '°';
-          } catch (error) {
-            steering_goal_string = 'ERROR';
-          }
+        try{
+          steering_goal_string = data.steering_goal.toFixed(0) + '°';
         }
-        else {
-          steering_goal_string = '****';  
-        }  
-        
+        catch (error) {
+          steering_goal_string = 'ERROR';
+        }
+        servoEnabled = data.servo_enabled;
+        setServoState(servoEnabled);
         updateSteeringUI(angle_string, steering_goal_string);
 
       }
@@ -148,15 +151,29 @@
           heading_goal_string = 'ERROR';
         }
       }
+
+      if ('autopilot_engaged' in data) {
+        try {
+          autopilotEngaged = data.autopilot_engaged;
+        } catch (error) {
+          autopilotEngaged = false;
+          console.log(error)
+        }
+        setAutopilotState(autopilotEngaged)
+      }
     
     }
-    const engineSpeed = document.getElementById('EngineSpeed');
-    const servoBtn = document.getElementById("servoToggleBtn");
-    const servoStatus = document.getElementById("servoEnabled");
-    const rudderButtons = [
-        document.getElementById("btnPortRudder"),
-        document.getElementById("btnStarRudder")
-    ];
+
+    autopilotBtn.addEventListener("click", () => {
+      if (autopilotEngaged){
+        socket.send(JSON.stringify({ command: "autopilot_disable"}));
+      }
+      else {
+        socket.send(JSON.stringify({ command: "autopilot_enable"}));
+      }
+    });
+
+
 
     function setServoState(enabled) {
         if (enabled) {
@@ -164,13 +181,26 @@
             servoBtn.classList.remove("disabled");
             servoBtn.classList.add("enabled");
             servoStatus.textContent = "Servo is Enabled";
-            rudderButtons.forEach(btn => btn.disabled = false);
         } else {
             servoBtn.textContent = "Enable Servo";
             servoBtn.classList.remove("enabled");
             servoBtn.classList.add("disabled");
-            servoStatus.textContent = "Servo is Disabled";
-            rudderButtons.forEach(btn => btn.disabled = true);
+            servoStatus.textContent = "Servo is Disabled";            
+        }
+    }
+
+    function setAutopilotState(enabled) {
+        if (enabled) {
+            autopilotBtn.innerHTML = "Disengage<br>Autopilot";
+            autopilotBtn.classList.remove("disabled");
+            autopilotBtn.classList.add("enabled");
+            autopilotStatus.textContent = "Autopilot is Engaged";
+
+        } else {
+            autopilotBtn.innerHTML = "Engage<br>Autopilot";
+            autopilotBtn.classList.remove("enabled");
+            autopilotBtn.classList.add("disabled");
+            autopilotStatus.textContent = "Autopilot Disengaged";
         }
     }
 
@@ -181,17 +211,17 @@
       if (steeringGoalEl)  { steeringGoalEl.textContent  = steering_goal_string; }
     }
 
-    document.getElementById('btnPortRudder').addEventListener('click', function () {
-        socket.send(JSON.stringify({ command: "rudder_left" }));
-        console.log("Port Rudder button clicked");
-    });
+    // document.getElementById('btnPortRudder').addEventListener('click', function () {
+    //     socket.send(JSON.stringify({ command: "rudder_left" }));
+    //     console.log("Port Rudder button clicked");
+    // });
 
-    document.getElementById('btnStarRudder').addEventListener('click', function () {
-        socket.send(JSON.stringify({ command: "rudder_right" }));
-        console.log("Starboard Rudder button clicked");
-    });
+    // document.getElementById('btnStarRudder').addEventListener('click', function () {
+    //     socket.send(JSON.stringify({ command: "rudder_right" }));
+    //     console.log("Starboard Rudder button clicked");
+    // });
 
-    let servoEnabled = false;
+
 
     servoBtn.addEventListener("click", () => {
         servoEnabled = !servoEnabled;
@@ -203,24 +233,26 @@
         else {
             // Send the new state to the server
             socket.send(JSON.stringify({ command: "servo_disable"}));
+            socket.send(JSON.stringify({ command: "autopilot_disable"}));
         } 
     });
 
-    servoToggleBtn.classList.add("disabled");
+    setServoState(servoEnabled)
+    setAutopilotState(autopilotEngaged)
 
-    /* ── set up buttons for goal adjustment ──────────────── */
+    /* set up buttons for goal adjustment*/
     const btnPort  = document.getElementById('btnPortGoal');
     const btnStar  = document.getElementById('btnStarGoal');
 
     if (btnPort) {
       btnPort.addEventListener('click', () => {
-        socket.send(JSON.stringify({ command: "goal_left" }));
+        socket.send(JSON.stringify({ command: "heading_left" }));
       });
     }
 
     if (btnStar) {
       btnStar.addEventListener('click', () => {
-        socket.send(JSON.stringify({ command: "goal_right" }));
+        socket.send(JSON.stringify({ command: "heading_right" }));
       });
     }
 
@@ -231,8 +263,8 @@
       /* Screen angle (0° = up) */
       const dx = x;
       const dy = -y;
-      let ang  = Math.atan2(dx, dy) * 180 / Math.PI;    // −180…180
-      desired_goal = clamp360(ang+heading); // 0…360
+      let ang  = Math.atan2(dx, dy) * 180 / Math.PI;    
+      desired_goal = clamp360(ang+heading); 
       socket.send(JSON.stringify({ heading_goal: desired_goal }));
       
     }

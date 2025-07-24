@@ -1,6 +1,13 @@
 #include <SPI.h>
 #include <mcp_can.h>
 
+#define SHAFT_VALUE_MESSAGE_ID       0x18F01D21
+#define SHAFT_STATUS_MESSAGE_ID      0x18FF2D21
+#define RUDDER_STATUS_MESSAGE_ID     0x19F10D13
+#define EXTERNAL_STEERING_CONTROL_ID 0x0CF34155
+
+#define TOTAL_STEERING_ANGLE 2950
+
 //————— Pin definitions —————
 static const uint8_t ENC_CS        = 10;      // AMT22 chip-select 
 static const uint8_t CAN_CS        = 9;      // MCP2515 chip-select
@@ -9,52 +16,46 @@ static const uint8_t SERVO_PUL_PIN = 4;
 static const uint8_t SERVO_DIR_PIN = 5;
 
 // Panel mounted LED Indicator
-static const uint8_t GREEN_PIN     = 6;
-static const uint8_t RED_PIN       = 3;
+static const uint8_t GREEN_PIN = 6;
+static const uint8_t RED_PIN   = 3;
 bool green_state = true;
-bool red_state = false;
+bool red_state   = false;
 uint32_t red_timer;
 uint32_t green_timer;
 
 // Female 5-Pin  M12 on the front panel (Future Use)
 // https://www.amazon.com/dp/B09S5ZVGSK
-static const uint8_t BROWN_5PIN    = A0; // Pin 1
-static const uint8_t WHITE_5PIN    = 2;  // Pin 2
-static const uint8_t BLUE_5PIN     = A2; // Pin 3
-static const uint8_t BLACK_5PIN    = 8;  // Pin 4
-static const uint8_t GRAY_5PIN     = A1; // Pin 5
+static const uint8_t BROWN_5PIN       = A0; // Pin 1
+static const uint8_t LIMIT_SWITCH_PIN = 2;  // Pin 2
+static const uint8_t BLUE_5PIN        = A2; // Pin 3
+static const uint8_t BLACK_5PIN       = 8;  // Pin 4
+static const uint8_t GRAY_5PIN        = A1; // Pin 5
 //———————————————
 
-static const uint32_t SPI_FREQ    = 400000; // 400 kHz for AMT22
-static const uint8_t  RES_BITS    = 12;     // your encoder resolution
+static const uint32_t SPI_FREQ       = 400000; // 400 kHz for AMT22
+static const uint8_t  RES_BITS       = 12;     // your encoder resolution
 static const int16_t  COUNTS_PER_REV = (1 << RES_BITS);
 static const int16_t  HALF_COUNTS_PER_REV = COUNTS_PER_REV >> 1;
 
 static const uint8_t  CAN_SPEED   = CAN_250KBPS;
 static const uint8_t  CAN_OSC_MHZ = MCP_16MHZ;  
 
-// J1939 parameters (example values)
-static const uint8_t  PRIORITY    = 6;
-static const uint32_t PGN         = 61469;  // PGN 61469 Steering Angle Sensor Information	SAS	Contains information which relates to a steering angle sensor.
-static const uint8_t  SOURCE_ADDR = 33; // Body Controller 
-static uint32_t id;
-
-
-
  
-static bool SERVO_EN_State = HIGH; //Disabled by default
+static bool SERVO_EN_State = HIGH; //By default set to HIGH, which is disabled
 static bool SERVO_PUL_State = LOW;
-static bool SERVO_DIR_State = LOW;
+static bool SERVO_DIR_State = LOW; // Low = Port (subtract); High to Starboard (add shaft angle)
 
 
 // timing
 uint32_t lastEncoderMillis = 0;
 uint32_t lastCANTXmillis = 0;
+uint32_t lastStatusTXmillis = 0;
 uint32_t lastCANRXmillis = 0;
 // uint32_t counter = 0;
 static uint32_t now = 0;
 static const uint32_t ENCODER_READ_TIME = 1; //milliseconds
 static const uint32_t CAN_SEND_TIME = 100; //milliseconds
+static const uint32_t STATUS_SEND_TIME = 1000;
 static const uint16_t SERVO_PULSE_WIDTH = 45; //microseconds
 
 
@@ -74,16 +75,15 @@ uint16_t lastRaw       = 0;
 double    lastAngleDeg  = 0;
 //int8_t  direction     = 0;   // +1 or -1
 int16_t  turns         = 0; // number of turns 
-double  totalAngle    = 0;   // degrees, can go negative if spun backwards
+double  totalAngle    = TOTAL_STEERING_ANGLE / 2;   // degrees, can go negative if spun backwards
 double angleGoal = totalAngle;
-//int32_t  totalCount    = 0;
 uint32_t  angleOffset   = 0x80000000; //Put zero at the mid-range
 uint16_t  speedOffset   = 0x8000; //Put zero at the mid-range
 int32_t  countOffset   = 0;
 double lastTotalAngle = 0;
 double angleError = 0;
 static const double ANGLE_THRESHOLD = 0.7;
-static const double MAX_ANGLE_CHANGE = 3600.0;
+static const double MAX_ANGLE_CHANGE = TOTAL_STEERING_ANGLE;
 
 uint8_t rudder_count = 0;
 uint16_t rudder_value = 256;
@@ -95,10 +95,27 @@ bool OKtoMove = true;
 bool upperLimitReached = false;
 bool lowerLimitReached = false;
 
+bool limitSwitchState = false;
+bool isTotalAngleZeroed = false;
+double total_angle_max = 0;
+double total_angle_min = 0;
+double total_angle_range = 0;
+
+bool isMinAngle = false;
+bool isMaxAngle = false;
+
+uint16_t reportedTotalAngleMax = 0xFFFF;
+uint16_t reportedTotalAngleMin = 0xFFFF;
 
 SPISettings amt22Settings(SPI_FREQ, MSBFIRST, SPI_MODE0);
 
 void setup() {
+  pinMode(BROWN_5PIN,OUTPUT);
+  digitalWrite(BROWN_5PIN,LOW);
+  pinMode(BLUE_5PIN,OUTPUT);
+  digitalWrite(BLUE_5PIN,HIGH);
+  pinMode(LIMIT_SWITCH_PIN,INPUT_PULLUP);
+  
   //Serial.begin(115200);
   pinMode(GREEN_PIN, OUTPUT);
   pinMode(RED_PIN, OUTPUT);
@@ -129,22 +146,16 @@ void setup() {
   // A mask of 0x1FFFFFFF means “compare all 29 bits”
 
   CANBUS.init_Mask(0, true,  0x1FFFFFFF);  // mask on RX0
-  CANBUS.init_Filt(0, true,  0x0CF34155);  // filter 0 → RX0
-  CANBUS.init_Filt(1, true,  0x19F10D13);  // filter 1 → RX0
-  CANBUS.init_Filt(2, true,  0x0CF34155);  // filter 2 → RX0
+  CANBUS.init_Filt(0, true,  EXTERNAL_STEERING_CONTROL_ID);  // filter 0 → RX0
+  CANBUS.init_Filt(1, true,  RUDDER_STATUS_MESSAGE_ID);  // filter 1 → RX0
+  CANBUS.init_Filt(2, true,  EXTERNAL_STEERING_CONTROL_ID);  // filter 2 → RX0
 
   CANBUS.init_Mask(1, true,  0x1FFFFFFF);  // mask on RX1
-  CANBUS.init_Filt(3, true,  0x0CF34155);  // filter 3 → RX1
-  CANBUS.init_Filt(4, true,  0x19F10D13);  // filter 4 → RX1
-  CANBUS.init_Filt(5, true,  0x0CF34155);  // filter 5 → RX1
+  CANBUS.init_Filt(3, true,  EXTERNAL_STEERING_CONTROL_ID);  // filter 3 → RX1
+  CANBUS.init_Filt(4, true,  RUDDER_STATUS_MESSAGE_ID);  // filter 4 → RX1
+  CANBUS.init_Filt(5, true,  EXTERNAL_STEERING_CONTROL_ID);  // filter 5 → RX1
 
   
-  //Serial.println(F("Read Encoder and Send on CAN setup complete"));
-
-  // compose J1939 ID: priority, PGN, dest, src
-  id = (uint32_t(PRIORITY) << 26)
-     | (uint32_t(PGN & 0x03FFFF) << 8)
-     | SOURCE_ADDR;
 
   for (uint8_t i=0;i<255;i++){
     analogWrite(GREEN_PIN, i);
@@ -157,19 +168,33 @@ void setup() {
     delay(5);
   }
 
-  // prime lastRaw so we don't get a huge jump on first read
-  SPI.begin();
-  lastRaw = readEncoder();
-  // totalCount = lastRaw;
-  lastAngleDeg = lastRaw * (360.0 / COUNTS_PER_REV);
-  totalAngle = lastAngleDeg;  
-  angleGoal = totalAngle;
+  
   
   green_state = HIGH;
   red_state = LOW;
   digitalWrite(RED_PIN, red_state);
   digitalWrite(GREEN_PIN, green_state);
+  
+  // Do this only if there is a limit switch at the end
+  // SERVO_EN_State = LOW;
+  // digitalWrite(SERVO_DIR_PIN, HIGH); //Push to Starboard
+  // digitalWrite(SERVO_EN_PIN, SERVO_EN_State);
+  // while (digitalRead(LIMIT_SWITCH_PIN)){
+  //   step();
+  // }
+  // totalAngle = TOTAL_STEERING_ANGLE;
 
+  // prime lastRaw so we don't get a huge jump on first read
+  SPI.begin();
+  lastRaw = readEncoder();
+  // totalCount = lastRaw;
+  lastAngleDeg = lastRaw * (360.0 / COUNTS_PER_REV);
+  totalAngle = TOTAL_STEERING_ANGLE /2;
+  angleGoal = totalAngle;
+  total_angle_max = totalAngle;
+  total_angle_min = totalAngle;
+  total_angle_range = 0;
+        
 }
 
 //62273	External Steering Request	XSR	External request to the steering controller
@@ -203,22 +228,14 @@ void readCAN(){
         data_in += uint32_t(rxBuf[1]) << 8;
         data_in += uint32_t(rxBuf[2]) << 16;
         data_in += uint32_t(rxBuf[3]) << 24;
-        //Serial.print(data_in,HEX);
-
-        angleGoal = double(data_in)/1000.0 - angleOffset/1000.0;
+    
+        angleGoal = (double(data_in) - angleOffset) / 1000.0;
         
-        //Serial.print(" totalAngle: ");
-        //Serial.println(totalAngle);
-        //Serial.print(" angleGoal: ");
-        //Serial.println(angleGoal);
-        if (abs(angleGoal-totalAngle) > MAX_ANGLE_CHANGE+1 ){ //Limit the total attempts in each direction
-          if (angleGoal > totalAngle) angleGoal =  MAX_ANGLE_CHANGE;
-          else if (angleGoal < totalAngle) angleGoal = - MAX_ANGLE_CHANGE;
-          //Serial.print(" newAngleGoal: ");
-          //Serial.println(angleGoal);
-        }
+        if (angleGoal > total_angle_max) angleGoal =  total_angle_max;
+        else if (angleGoal < total_angle_min) angleGoal = total_angle_min;
+    
       }
-      else if ((rxId & 0x3FFFF00) == 0x01F10D00) {
+      else if ((rxId & 0x3FFFF00) == 0x01F10D00) { //Rudder data
         rudder_count = rxBuf[0];
         rudder_value = rxBuf[1] + rxBuf[2]*256;
         rudder_max   = rxBuf[3] + rxBuf[4]*256;
@@ -280,8 +297,10 @@ uint16_t readEncoder() { //AMT22
 }
 
 void loop() {
+  limitSwitchState = !digitalRead(LIMIT_SWITCH_PIN);
   uint32_t now = millis();
   static uint8_t data[8];
+  static uint8_t status_data[8];
   // Check to see if a new CAN Message arrived
   readCAN();
   
@@ -289,20 +308,13 @@ void loop() {
     uint16_t raw = readEncoder();
     if (raw != 0xFFFF && lastRaw != 0xFFFF){
       double angleDeg = raw * (360.0 / COUNTS_PER_REV);
-      // counter++;
-      // Serial.print(counter);
-      // Serial.print(F(" Raw: "));
-      // Serial.print(raw);
-      // Serial.print(F("  Angle: "));
-      // Serial.print(angleDeg, 2);
-      // Serial.print(F(" deg")); 
+
       // compute change in counts and angle, with wrap-around correction
       double deltaAngle = angleDeg - lastAngleDeg;  
       lastAngleDeg = angleDeg;
 
       int16_t delta = int16_t(raw) - int16_t(lastRaw);
-      lastRaw = raw;
-
+      
       if (delta >  (HALF_COUNTS_PER_REV))  {
         delta -= COUNTS_PER_REV;
         deltaAngle -= 360.0;
@@ -311,43 +323,47 @@ void loop() {
         delta += COUNTS_PER_REV;
         deltaAngle += 360.0;
       } 
-
-      // Serial.print(F(" Delta: "));
-      // Serial.print(delta);
-      // Serial.print(F("  DeltaAngle: "));
-      // Serial.print(deltaAngle, 2);
-      // Serial.print(F(" deg")); 
-
+     
       totalAngle += deltaAngle;
-      // totalCount += delta;
 
+      if (totalAngle > total_angle_max) {
+        total_angle_max = totalAngle;
+        total_angle_range = total_angle_max - total_angle_min;
+      }
+      else if (totalAngle < total_angle_min) {
+        total_angle_min = totalAngle;
+        total_angle_range = total_angle_max - total_angle_min;
+      }
       
+
+      if (!isTotalAngleZeroed){
+       if (total_angle_range >= TOTAL_STEERING_ANGLE){ // we are at a limit. Let's figure out which one.
+          if (totalAngle < TOTAL_STEERING_ANGLE / 2) totalAngle = 0;
+          else totalAngle = total_angle_range; // the system is at a maximum
+          total_angle_min = 0;
+          total_angle_max = total_angle_range;
+          isTotalAngleZeroed = true;
+       } 
+      }
       
-      // Serial.print(F(" TotalCnt: "));
-      // Serial.print(totalCount);
-      // Serial.print(F("  TotalDeg: "));
-      // Serial.print(totalAngle);
-      // Serial.print(" AngleGoal: ");
-      // Serial.print(angleGoal,2);
+      reportedTotalAngleMax = uint16_t(total_angle_max + 0x8000);
+      reportedTotalAngleMin = uint16_t(total_angle_min + 0x8000);
+      uint16_t reportedTotalAngleRange = reportedTotalAngleMax - reportedTotalAngleMin;
+      status_data[0] = isTotalAngleZeroed + (isMaxAngle << 4) + (isMinAngle << 6);
+      status_data[1] = (reportedTotalAngleMax   >> 0) & 0xFF;
+      status_data[2] = (reportedTotalAngleMax   >> 8) & 0xFF;
+      status_data[3] = (reportedTotalAngleMin   >> 0) & 0xFF;
+      status_data[4] = (reportedTotalAngleMin   >> 8) & 0xFF;
+      status_data[5] = (reportedTotalAngleRange >> 0) & 0xFF;
+      status_data[6] = (reportedTotalAngleRange >> 8) & 0xFF;
+      status_data[7] = limitSwitchState + (upperLimitReached << 2) + (lowerLimitReached << 4) + (SERVO_EN_State << 6);
 
-      // determine direction
-      // if (delta == 0) direction = '0';
-      // else if (delta < 0) direction = 'N';
-      // else direction = 'P';
-
-      // Serial.print(F("  Dir: "));
-      // Serial.print(direction);
-
-      //double speed = double(deltaAngle*1000) / double(ENCODER_READ_TIME); //degrees per second or millidegrees per millisecond
-      // Serial.print(F(" Speed: "));
-      // Serial.print(speed, 2);
-      // Serial.println(F(" deg/sec"));
-      
       //CAN Data
       uint32_t reportedAngle = uint32_t(1000.0 * totalAngle) + angleOffset;
       uint32_t reportedGoal = 0xFFFFFFFF;
       if (!SERVO_EN_State) reportedGoal = uint32_t(1000.0 * angleGoal) + angleOffset;
-      
+      else reportedGoal = 0xFFFFFFFF;
+
       //uint16_t reportedSpeed = uint16_t(10.0 * speed) - speedOffset;
       data[0] = (reportedAngle >>  0) & 0xFF;
       data[1] = (reportedAngle >>  8) & 0xFF;
@@ -357,50 +373,62 @@ void loop() {
       data[5] = (reportedGoal  >>  8) & 0xFF;
       data[6] = (reportedGoal  >> 16) & 0xFF;
       data[7] = (reportedGoal  >> 24) & 0xFF;
-      
-      angleError = angleGoal - totalAngle;
     }
     else {
-      //Serial.println(F("Raw returned 0xFFFF"));
       memset(data, 0xFF, 8);
     }
+    lastRaw = raw;
     lastEncoderMillis = now;
   }
   
   if (now - lastCANTXmillis >= CAN_SEND_TIME) {
     lastCANTXmillis = now;
     // send as extended frame
-    if (CANBUS.sendMsgBuf(id, 1, 8, data) == CAN_OK) {
+    if (CANBUS.sendMsgBuf(SHAFT_VALUE_MESSAGE_ID, 1, 8, data) == CAN_OK) {
+      //red_state = !red_state;
+      red_timer = now;
+    }
+  }
+  if (now - lastStatusTXmillis >= STATUS_SEND_TIME) {
+    lastStatusTXmillis = now;
+    if (CANBUS.sendMsgBuf(SHAFT_STATUS_MESSAGE_ID, 1, 8, status_data) == CAN_OK) {
       //red_state = !red_state;
       red_timer = now;
     }
   }
   
+  angleError = angleGoal - totalAngle;
 
-  //if ((now - lastCANRXmillis) < 5100 ){
-    if (abs(angleError) > ANGLE_THRESHOLD){
-      if (angleError < ANGLE_THRESHOLD) {
-        if (!upperLimitReached) {  //Check to be sure the rudder limit and the shaft angle match direction.
-          digitalWrite(SERVO_DIR_PIN, LOW);
-          step();
-          red_state=false;
-        }
-        else {
-          red_state = true;
-        }
+  // Check Rudder position and check shaft position before moving
+  if ( abs(angleError) > ANGLE_THRESHOLD ){
+    if (angleError > ANGLE_THRESHOLD) { // need to increase the shaft value
+      if ( totalAngle < (total_angle_max - 0.5) ){
+        digitalWrite(SERVO_DIR_PIN, HIGH); //Push to Starboard
+        step();
+        red_state=false;
+        isMaxAngle = false;
       }
       else {
-        if(!lowerLimitReached) {
-          digitalWrite(SERVO_DIR_PIN, HIGH);
-          red_state = false;
-          step();
-        }
-        else {
-          red_state = true;
-        }
+        isMaxAngle = true;
+        red_state = true;
+        green_state = false;
       }
     }
-  //else digitalWrite(SERVO_EN_PIN, HIGH);  // disable stepper
+    else { // decrease shaft value
+      if ( totalAngle > (total_angle_min + 0.5) ){
+          digitalWrite(SERVO_DIR_PIN, LOW); //Push to Port
+          red_state = false;
+          step();
+          isMinAngle = false;
+        }
+      else {
+        red_state = true;
+        green_state = false;
+        isMinAngle = true;
+      }
+    }
+  }
+  
 
   if ( (now - green_timer) > 1000) green_state = HIGH; // Solid Green means CAN is not being received.
   if ( (now - red_timer)   > 1000) red_state = HIGH; // Solid Red means CAN is not being sent out (ERROR)
