@@ -7,31 +7,53 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <style>
-        body {
+        html, body {
+            height: 100vh;
+            margin: 0;
             font-family: Arial, sans-serif;
             font-size: 60px;
             color: white; /*Font Color*/
             background-color: black;
-            height: 100vh; 
-            display: grid;
-            grid-template-columns: 1fr;
-            grid-template-rows: auto 1fr auto;   /* header | main | footer  */
-            grid-template-areas:
-                "hdr"
-                "main"
-                "ftr";
-            margin: 0;
-            padding: 0;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
         }
 
-        .main-grid {
-            grid-area: main;
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 0;
-            height: 100%;
-            align-items: middle;
+        header, footer {
+            padding: 10px;
+            text-align: center;
+            flex: 0 0 auto;
         }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr; /* left, center, right */
+            
+        }
+
+        .left, .right {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px;
+            height: 100%;
+            }
+        .left { 
+            justify-content: right;
+        }
+        .right { 
+            justify-content: left;
+        }
+
+        .center {
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            overflow: hidden;
+            display: flex;
+        }
+
 
         #btnPortGoal, #btnStarGoal, #btnPortRudder, #btnStarRudder {
             background-color: transparent;
@@ -39,27 +61,11 @@
             cursor: pointer;
         }
 
-        .side-col-left,
-        .side-col-right {
-            display: grid;
-            grid-template-rows: auto 1fr auto;
-            place-items: center;
-        }
 
-        .side-col-left img,
-        .side-col-right img {
-            width: 100%;
-            height: auto;
+        .left img,
+        .right img {
             cursor: pointer;
-            max-width: 25lh;
-        }
-
-        .center-col {
-            display:flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-             max-width: 50lh;
+            max-height: 300px;
         }
 
         canvas#compass {
@@ -67,11 +73,11 @@
             background: #fafafa;
             height: 100%;
             border-radius: 50%;
-            display: block;
+            
         }
 
         #autopilotBtn {
-            font-size: 90px;
+            font-size: 60px;
             padding: 0.5em 0.5em;
             border: none;
             border-radius: 0.5em;
@@ -113,56 +119,44 @@
     </style>
 </head>
 <body>
-    <div class="main-grid">
-        <div class="side-col-left" id="left">
-            <div class="port-side-row top">
-                <button id="btnPortGoal">
-                    <img src="/static/images/RedPortArrowLabeled.png" alt="Port Goal">
-                </button>
-            </div>
-            <div class="port-side-row middle" id="leftMiddle">
-                <span style="font-size:48px" id="autopilotStatus">Autopilot Disengaged</span>
-                <br>
-                <button id="autopilotBtn">Engage<br>Autopilot</button>
-                <p>
-                Steering Goal:<br>
-                <span style="font-family:monospace; font-size:120px; white-space:pre;" id="steeringGoal">-------</span><br>
-                Steering Val:<br>
-                <span style="font-family:monospace; font-size:120px; white-space:pre;"  id="steeringValue">----</span>
-                </p>
-            </div>
-            <div class="port-side-row bottom" id="leftBottom">
-                <button id="btnPortRudder">
-                    <img src="/static/images/RudderArrowLeft.png" alt="Port Rudder">
-                </button>
-            </div>
+    <!-- <header>Autopilot Control</header> -->
+    <div  class="container">
+        <div class="left" id="left">
+            <button id="btnPortGoal">
+                <img src="/static/images/RedPortArrowLabeled.png" alt="Port Goal">
+            </button>
+            <p>
+            <span style="font-size:48px" id="autopilotStatus">Autopilot Disengaged</span>
+            <br>
+            <button id="autopilotBtn">Engage Autopilot</button>
+            </p>
+            <p>
+            Steering Goal:<br>
+            <span style="font-family:monospace; font-size:90px; white-space:pre;" id="steeringGoal">------</span><br>
+            Steering Val:<br>
+            <span style="font-family:monospace; font-size:90px; white-space:pre;"  id="steeringValue">----</span>
+            </p>
         </div>
-
-        <div class="center-col" id="center">
+        
+        <div class="center" id="center">
             <canvas id="compass"></canvas>
         </div>
 
-        <div class="side-col-right" id="right">
-            <div class="star-side-row top">
-                <button id="btnStarGoal">
-                    <img src="/static/images/GreenStarboardArrowLabeled.png" alt="Starboard Goal">
-                </button>
-            </div>
-            <div class="star-side-row middle" id="rightMiddle">
+        <div class="right" id="right">
+            <button id="btnStarGoal">
+                <img src="/static/images/GreenStarboardArrowLabeled.png" alt="Starboard Goal">
+            </button>
+            <p>
                 <span style="font-size:48px" id="servoEnabled">Servo is Disabled</span>
                 <br>
                 <button id="servoToggleBtn">Enable Servo</button>
-                <p style="align-items:right;">Engine Speed:<br>
-                    <span style="font-family:monospace; font-size:120px; white-space:pre;" id="EngineSpeed">----</span></p>
-            </div>
-            <div class="star-side-row bottom" id="rightBottom">
-                <button id="btnStarRudder">
-                    <img src="/static/images/RudderArrowRight.png" alt="Starboard Rudder">
-                </button>
-            </div>
+            </p>        
+            <p style="align-items:right;">Engine Speed:<br>
+                <span style="font-family:monospace; font-size:90px; white-space:pre;" id="EngineSpeed">----</span>
+            </p>
         </div>
     </div>
-
+    <!-- <footer>CAN</footer> -->
     <script src="/static/js/socket.io.min.js"></script>
     <script src="/static/js/compass.js"></script>
     <script>

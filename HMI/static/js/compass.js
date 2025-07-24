@@ -34,10 +34,6 @@
     const autopilotStatus = document.getElementById("autopilotStatus")
     const autopilotBtn = document.getElementById("autopilotBtn");
     
-    const rudderButtons = [
-        document.getElementById("btnPortRudder"),
-        document.getElementById("btnStarRudder")
-    ];
 
     const socket = new WebSocket('ws://' + location.hostname + ':5000/ws');
   
@@ -99,13 +95,17 @@
       if ('steering_angle' in data && 'steering_goal' in data && 'servo_enabled' in data) {
         try {
           angle_string = data.steering_angle.toFixed(0) + '°';
-          steering_goal_string = data.steering_goal.toFixed(0) + '°';
-          servoEnabled = data.servo_enabled;
-          setServoState(servoEnabled);
         } catch (error) {
           angle_string = 'ERROR';
+        }
+        try{
+          steering_goal_string = data.steering_goal.toFixed(0) + '°';
+        }
+        catch (error) {
           steering_goal_string = 'ERROR';
         }
+        servoEnabled = data.servo_enabled;
+        setServoState(servoEnabled);
         updateSteeringUI(angle_string, steering_goal_string);
 
       }
@@ -170,7 +170,6 @@
       }
       else {
         socket.send(JSON.stringify({ command: "autopilot_enable"}));
-        rudderButtons.forEach(btn => btn.disabled = true);
       }
     });
 
@@ -182,14 +181,11 @@
             servoBtn.classList.remove("disabled");
             servoBtn.classList.add("enabled");
             servoStatus.textContent = "Servo is Enabled";
-            rudderButtons.forEach(btn => btn.disabled = false);
         } else {
             servoBtn.textContent = "Enable Servo";
             servoBtn.classList.remove("enabled");
             servoBtn.classList.add("disabled");
-            servoStatus.textContent = "Servo is Disabled";
-            rudderButtons.forEach(btn => btn.disabled = true);
-            
+            servoStatus.textContent = "Servo is Disabled";            
         }
     }
 
@@ -215,15 +211,15 @@
       if (steeringGoalEl)  { steeringGoalEl.textContent  = steering_goal_string; }
     }
 
-    document.getElementById('btnPortRudder').addEventListener('click', function () {
-        socket.send(JSON.stringify({ command: "rudder_left" }));
-        console.log("Port Rudder button clicked");
-    });
+    // document.getElementById('btnPortRudder').addEventListener('click', function () {
+    //     socket.send(JSON.stringify({ command: "rudder_left" }));
+    //     console.log("Port Rudder button clicked");
+    // });
 
-    document.getElementById('btnStarRudder').addEventListener('click', function () {
-        socket.send(JSON.stringify({ command: "rudder_right" }));
-        console.log("Starboard Rudder button clicked");
-    });
+    // document.getElementById('btnStarRudder').addEventListener('click', function () {
+    //     socket.send(JSON.stringify({ command: "rudder_right" }));
+    //     console.log("Starboard Rudder button clicked");
+    // });
 
 
 

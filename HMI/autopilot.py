@@ -7,10 +7,14 @@ import threading
 import csv
 import os
 import datetime
+import queue
+import statistics
 
 # Setup logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger = logging.getLogger('autopilot')
+logger.setLevel(logging.INFO)
+
+QUEUE_SIZE = 10000
 
 class Autopilot():
     def __init__(self, can_interface):
@@ -22,13 +26,16 @@ class Autopilot():
         self.rudder_goal = 0 #count
         self.autopilot_engaged = False
         self.heading_error = 0 #degrees
-        self.steering_shaft_max = 0
-        self.steering_shaft_min = 0
-        self.shaft_goal = 0
-        self.current_shaft = 0
+        self.steering_shaft_max = 1500
+        self.steering_shaft_min = 1000
+        self.shaft_goal = 1500
+        self.current_shaft = 1500
+        self.shaft_center = 1425
         self.rudder_count_max = 0
         self.rudder_count_min = 0
         self.counter = 0
+        self.heading_list = []
+        self.shaft_list = []
         self.error_list = []
         self.time_list = []
         self.error_list_length = 1000
@@ -36,7 +43,7 @@ class Autopilot():
         self._run_thread = None
         self._stop_event = threading.Event()
 
-        self.Kp = 1
+        self.Kp = 40 # Proportional gain
         self.Ki = 0.05
         self.Kd = .1
 
@@ -143,22 +150,33 @@ class Autopilot():
     def run(self):
         while True:
             time.sleep(0.1)
+            self.heading_list.append(self.current_heading)
+            self.shaft_list.append(self.can_interface.shaft_value)
+            if len(self.heading_list) >= QUEUE_SIZE:
+                shaft_mean = statistics.mean(self.shaft_list)
+                heading_mean = statistics.mean(self.heading_list)
+                heading_std = statistics.stdev(self.heading_list, xbar=heading_mean)
+                self.heading_list = []
+                self.shaft_list = []
+                if heading_std < 2: # This is an indicator the boat is going straight
+                    self.shaft_center = shaft_mean
             self.heading_error = self.heading_goal - self.current_heading
             if self.heading_error < -180:
                 self.heading_error += 360
             elif self.heading_error > 180:
                 self.heading_error -= 360
             
-            self.rudder_goal = self.compute_rudder_command()
+            self.shaft_goal = self.compute_rudder_command()
             self.broadcast_status_message()
-            logger.debug(f"heading error: {self.heading_error:.2f}, Computed rudder goal: {self.rudder_goal:.2f}")
+            logger.debug(f"heading error: {self.heading_error:.2f}, Computed shaft goal: {self.shaft_goal:.2f}")
             if self.autopilot_engaged == True:
                 # Generate a command and broadcast the steering
-                self.shaft_goal = self.map_rudder_to_steering(self.rudder_goal)
                 self.can_interface.set_shaft_goal(self.shaft_goal)
                 self.can_interface.send_shaft_goal()
                 logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
-            
+            else:
+                self.heading_goal = self.current_heading
+
             self.log_data()
 
     
@@ -205,19 +223,20 @@ class Autopilot():
         # derivative = (error - self._prev_error) / dt if dt > 0 else 0.0
         self._prev_error = error
 
-        rudder_command = (
+        shaft_command = (
             self.Kp * error +
             self.Ki * self._integral +
-            self.Kd * derivative
+            self.Kd * derivative + 
+            self.shaft_center
         )
-        rudder_range = self.rudder_count_max - self.rudder_count_min
-        shaft_range = self.steering_shaft_max - self.steering_shaft_min
-        logger.debug(f"Compute: dt: {dt:.6f}, Kp: {self.Kp}, error: {error:.3f}, Ki: {self.Ki}, integral: {self._integral:.1f}, Kd: {self.Kd}, derivative: {derivative:.3f}, rudder_command: {rudder_command:.1f}, rudder_range: {rudder_range}, shaft_range: {shaft_range}")
-        # Constrain rudder_command to physical limits
-        #rudder_command = max(min(rudder_command, self.rudder_count_max), self.rudder_count_min)
+        if shaft_command < 0:
+            shaft_command = 0
+        elif shaft_command > 2950:
+            shaft_command = 2950
+        logger.debug(f"Compute: dt: {dt:.6f}, Kp: {self.Kp}, error: {error:.3f}, Ki: {self.Ki}, integral: {self._integral:.1f}, Kd: {self.Kd}, derivative: {derivative:.3f}, shaft_command: {shaft_command:.1f}")
 
-        return rudder_command
- 
+        return shaft_command
+
     def map_steering_to_rudder(self, shaft_angle):
         """
         Linearly map steering shaft angle to rudder angle based on calibrated limits.
@@ -244,14 +263,9 @@ class Autopilot():
             return 0
 
         ratio = (rudder_count - self.rudder_count_min) / rudder_range
-        shaft_angle = self.steering_shaft_min + ratio * (self.steering_shaft_max - self.steering_shaft_min)
+        shaft_angle = self.steering_shaft_min + ratio * shaft_range
         logger.debug(f"shaft_angle: {shaft_angle}")
         
-        #Prevent overturning. 
-        if shaft_angle > 3200:
-            shaft_angle = 3200
-        elif shaft_angle < -3200:
-            shaft_angle = -3200
         return shaft_angle
 
     def compute_slope(self, xs, ys):

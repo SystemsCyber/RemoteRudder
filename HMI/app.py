@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # sudo apt install python3-tornado
 
-print(">>> app.py starting")
+
+# Test with vcan 
+# canplayer -l i -v -I logs/test_data-21July2025.log vcan0=can0
+
+#
 import sys
 sys.stdout.flush()
 
@@ -18,12 +22,11 @@ from can_interface import CANinterface
 from autopilot import Autopilot
 
 # Setup logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger('autopilot')
+logging.basicConfig(level=logging.INFO)
 
 clients = set()
-can_interface = CANinterface()
+can_interface = CANinterface(channel='can0')
 autopilot = Autopilot(can_interface)
 autopilot.start()
 
@@ -79,8 +82,6 @@ def handle_client_command(command):
             
 def broadcast_can_message(data):
     if 'steering_goal' in data and "min_steering_angle" in data and "min_steering_angle" in data:
-        # send new goal to the can interface
-        can_interface.current_goal= data['steering_goal']
         autopilot.set_steering_shaft_limits(data["min_steering_angle"], data["max_steering_angle"])
     elif 'COG' in data:
         autopilot.set_heading(data['COG'])
