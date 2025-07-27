@@ -215,8 +215,14 @@ class CANinterface:
                 return {"SOG": self.boat_speed, "COG": heading}
 
         elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
-            engaged = bool(msg.data[0])
+            engaged = bool(msg.data[0] & 0x01)
+            left = bool(msg.data[0 & 0x20])
+            right = bool(msg.data[0] &0x10)
             heading_goal = (struct.unpack_from("<H", msg.data, 1)[0] - 0x8000 )/ 100.0
+            if heading_goal < 0:
+                heading_goal += 360
+            elif heading_goal >= 360:
+                heading_goal -= 360
             heading_error = (struct.unpack_from("<H", msg.data, 3)[0] - 0x8000 )/ 100.0
             rudder_goal = (struct.unpack_from("<H", msg.data, 5)[0] - 0x8000 )/ 100.0
             counter = msg.data[7]

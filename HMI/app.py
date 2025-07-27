@@ -78,6 +78,21 @@ def handle_client_command(command):
     elif command == "autopilot_disable":
         autopilot.autopilot_engaged = False
         logger.info("Received Request to Disable Autopilot.")
+    elif command == "start_turn_left":
+        autopilot.left_turn_engaged = True
+        autopilot.right_turn_engaged = False
+        logger.info("Start Left Turn.")
+    elif command == "start_turn_right":
+        autopilot.left_turn_engaged = False
+        autopilot.right_turn_engaged = True
+        logger.info("Start Right Turn.")
+    elif command == "stop_turn_right":
+        autopilot.right_turn_engaged = False
+        logger.info("Stop Right Turn.")
+    elif command == "stop_turn_left":
+        autopilot.left_turn_engaged = False
+        logger.info("Stop Left Turn.")
+        
 
             
 def broadcast_can_message(data):
@@ -98,7 +113,7 @@ def make_app():
         (r"/ws", WSHandler),
     ],
     template_path="templates",
-    static_path="static",
+    static_path="static",   
     debug=True)
 
 async def main():

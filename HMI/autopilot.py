@@ -25,6 +25,9 @@ class Autopilot():
         self.current_rudder = 0 #degrees
         self.rudder_goal = 0 #count
         self.autopilot_engaged = False
+        self.left_turn_engaged = False
+        self.right_turn_engaged = False
+        
         self.heading_error = 0 #degrees
         self.steering_shaft_max = 1500
         self.steering_shaft_min = 1000
@@ -43,14 +46,15 @@ class Autopilot():
         self._run_thread = None
         self._stop_event = threading.Event()
 
-        self.Kp = 40 # Proportional gain
-        self.Ki = 0.05
-        self.Kd = .1
+        self.Kp = 30 # Proportional gain
+        self.Ki = 0.3
+        self.Kd = 1
 
         self._integral = 0.0
         self._prev_error = 0.0
         self._last_time = time.time()
         self.start_time = time.time()
+        self.last_turn_time = time.time()
         
         self.init_logger()
     
@@ -79,20 +83,32 @@ class Autopilot():
         logger.info(f'Adjust heading goal by {delta}.')
         try:
             self.heading_goal += delta
+            if self.heading_goal < 0:
+                self.heading_goal += 360
+            elif self.heading_goal > 360:
+                self.heading_goal -= 360
         except:
             logger.exception("Invalid heading change adjustment.")
 
     def set_heading_goal(self,value):
         logger.info(f'set heading goal to {value}.')
         try:
-            self.heading_goal = value % 360
+            self.heading_goal = value
+            if self.heading_goal < 0:
+                self.heading_goal += 360
+            elif self.heading_goal > 360:
+                self.heding_goal -= 360
         except:
             logger.exception("Invalid heading goal setting.")
     
     def set_heading(self,value):
         logger.info(f'set heading value to {value}.')
         try:
-            self.current_heading = value % 360
+            self.current_heading = value
+            if self.current_heading < 0:
+                self.current_heading += 360
+            elif self.current_heading > 360:
+                self.current_heading -= 360
         except:
             logger.exception("Invalid heading goal setting.")
 
@@ -106,6 +122,9 @@ class Autopilot():
             # Byte 7: reserved or counter
 
             engaged_byte = 0x01 if self.autopilot_engaged else 0x00
+            engaged_byte += 0x10 if self.left_turn_engaged else 0
+            engaged_byte += 0x20 if self.right_turn_engaged else 0
+             
             heading_goal = int(self.heading_goal * 100 + 0x8000) & 0xFFFF
             heading_error = int(self.heading_error * 100 + 0x8000) & 0xFFFF
             rudder_goal = int(self.rudder_goal * 100 + 0x8000) & 0xFFFF 
@@ -148,7 +167,11 @@ class Autopilot():
 
 
     def run(self):
+        self.last_shaft_adjust_time = time.time()
+        self.last_turn_time = time.time()
+        self.last_shaft_goal = self.shaft_goal
         while True:
+            now = time.time()
             time.sleep(0.1)
             self.heading_list.append(self.current_heading)
             self.shaft_list.append(self.can_interface.shaft_value)
@@ -160,6 +183,19 @@ class Autopilot():
                 self.shaft_list = []
                 if heading_std < 2: # This is an indicator the boat is going straight
                     self.shaft_center = shaft_mean
+            
+            if (now - self.last_turn_time > 1.5):
+                self.last_turn_time = now
+                if self.left_turn_engaged:
+                    self.right_turn_engaged = False
+                    self.heading_goal -= 1
+                    if self.heading_goal < 0:
+                        self.heading_goal += 360
+                elif self.right_turn_engaged:
+                    self.left_turn_engaged = False
+                    self.heading_goal += 1
+                    if self.heading_goal >= 360:
+                        self.heading_goal -= 360
             self.heading_error = self.heading_goal - self.current_heading
             if self.heading_error < -180:
                 self.heading_error += 360
@@ -170,10 +206,13 @@ class Autopilot():
             self.broadcast_status_message()
             logger.debug(f"heading error: {self.heading_error:.2f}, Computed shaft goal: {self.shaft_goal:.2f}")
             if self.autopilot_engaged == True:
-                # Generate a command and broadcast the steering
-                self.can_interface.set_shaft_goal(self.shaft_goal)
-                self.can_interface.send_shaft_goal()
-                logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
+                if (now - self.last_shaft_adjust_time) > .2:
+                    self.last_shaft_adjust_time = now
+                    if abs(self.shaft_goal - self.last_shaft_goal) > 100: # deadband
+                        # Generate a command and broadcast the steering
+                        self.can_interface.set_shaft_goal(self.shaft_goal)
+                        self.can_interface.send_shaft_goal()
+                        logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
             else:
                 self.heading_goal = self.current_heading
 
