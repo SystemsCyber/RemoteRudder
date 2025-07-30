@@ -49,9 +49,9 @@ class WSHandler(tornado.websocket.WebSocketHandler):
             data = json.loads(message)
             if "command" in data:
                 handle_client_command(data["command"])
-            elif "heading_goal" in data:
-                autopilot.set_heading_goal(data["heading_goal"])
-                broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
+            # elif "heading_goal" in data:
+            #     autopilot.set_heading_goal(data["heading_goal"])
+            #     broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
         except Exception as e:
             logger.exception("Failed to process WebSocket message")
 
@@ -63,10 +63,10 @@ def handle_client_command(command):
         can_interface.adjust_shaft_goal(5)
     elif command == "heading_right":
         autopilot.adjust_heading_goal(+1)
-        broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
+        # broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
     elif command == "heading_left":
         autopilot.adjust_heading_goal(-1)
-        broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
+        # broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
     elif command == "servo_enable":
         can_interface.set_servo_enabled(True)
     elif command == "servo_disable":

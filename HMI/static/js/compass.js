@@ -429,7 +429,7 @@
   function fmtDeg(val, digits = 3) {
     try {
       if (typeof val !== 'number' || isNaN(val)) throw new Error('bad');
-      return val.toFixed(0).padStart(digits, '0') + '°';
+      return val.toFixed(0) + '°';
     } catch (e) {
       return '---';
     }
@@ -460,10 +460,10 @@
   /* Keep any angle in 0-359 range */
   function clamp360(a) {                     // convenience normaliser
     if (a >= 360) {
-      a-=360;
+      a -= 360;
     }
     else if (a < 0) {
-      a+=360;
+      a += 360;
     };
     return a;
   }

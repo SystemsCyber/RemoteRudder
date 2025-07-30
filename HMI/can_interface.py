@@ -218,7 +218,8 @@ class CANinterface:
             engaged = bool(msg.data[0] & 0x01)
             left = bool(msg.data[0 & 0x20])
             right = bool(msg.data[0] &0x10)
-            heading_goal = (struct.unpack_from("<H", msg.data, 1)[0] - 0x8000 )/ 100.0
+            #heading_goal = int(self.heading_goal * 100 + 0x8000) & 0xFFFF
+            heading_goal = (struct.unpack("<H", msg.data[1:3])[0] - 0x8000 )/ 100.0
             if heading_goal < 0:
                 heading_goal += 360
             elif heading_goal >= 360:

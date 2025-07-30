@@ -97,7 +97,7 @@ class Autopilot():
             if self.heading_goal < 0:
                 self.heading_goal += 360
             elif self.heading_goal > 360:
-                self.heding_goal -= 360
+                self.heading_goal -= 360
         except:
             logger.exception("Invalid heading goal setting.")
     
@@ -170,6 +170,7 @@ class Autopilot():
         self.last_shaft_adjust_time = time.time()
         self.last_turn_time = time.time()
         self.last_shaft_goal = self.shaft_goal
+        self.shaft_goal_list = []
         while True:
             now = time.time()
             time.sleep(0.1)
@@ -184,7 +185,7 @@ class Autopilot():
                 if heading_std < 2: # This is an indicator the boat is going straight
                     self.shaft_center = shaft_mean
             
-            if (now - self.last_turn_time > 1.5):
+            if (now - self.last_turn_time > 2.5):
                 self.last_turn_time = now
                 if self.left_turn_engaged:
                     self.right_turn_engaged = False
@@ -203,13 +204,17 @@ class Autopilot():
                 self.heading_error -= 360
             
             self.shaft_goal = self.compute_rudder_command()
+            self.shaft_goal_list.append(self.shaft_goal)
             self.broadcast_status_message()
             logger.debug(f"heading error: {self.heading_error:.2f}, Computed shaft goal: {self.shaft_goal:.2f}")
             if self.autopilot_engaged == True:
-                if (now - self.last_shaft_adjust_time) > .2:
+                if (now - self.last_shaft_adjust_time) > 1:
                     self.last_shaft_adjust_time = now
-                    if abs(self.shaft_goal - self.last_shaft_goal) > 100: # deadband
+                    self.shaft_goal_mean = statistics.mean(self.shaft_goal_list)
+                    self.shaft_goal_list = []
+                    if abs(self.shaft_goal_mean - self.last_shaft_goal) > 100: # deadband
                         # Generate a command and broadcast the steering
+                        self.last_shaft_goal = self.shaft_goal_mean
                         self.can_interface.set_shaft_goal(self.shaft_goal)
                         self.can_interface.send_shaft_goal()
                         logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
