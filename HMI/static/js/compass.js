@@ -167,6 +167,7 @@
         }
         setAutopilotState(autopilotEngaged)
       }
+
       if ('left_turn' in data) {
         try {
           leftTurnState = data.left_turn;
@@ -176,6 +177,7 @@
         }
         setLeftTurnState(leftTurnState)
       }
+
       if ('right_turn' in data) {
         try {
           rightTurnState = data.right_turn;
@@ -202,12 +204,12 @@
           rightTurnBtn.textContent = "Stop Right Turn";
           rightTurnBtn.classList.remove("disabled");
           rightTurnBtn.classList.add("enabled");
-          right_turn_message.textContent = "Turning";
+          right_turn_message.textContent = "Turning Right";
       } else {
           rightTurnBtn.textContent = "Right Turn";
           rightTurnBtn.classList.remove("enabled");
           rightTurnBtn.classList.add("disabled");
-          right_turn_message.textContent = "Servo is Disabled";            
+          right_turn_message.textContent = "Not Turning Right";            
       }
     }
 
@@ -216,12 +218,12 @@
           leftTurnBtn.textContent = "Stop Left Turn";
           leftTurnBtn.classList.remove("disabled");
           leftTurnBtn.classList.add("enabled");
-          left_turn_message.textContent = "Turning";
+          left_turn_message.textContent = "Turning Left";
       } else {
           leftTurnBtn.textContent = "Left Turn";
           leftTurnBtn.classList.remove("enabled");
           leftTurnBtn.classList.add("disabled");
-          left_turn_message.textContent = "Servo is Disabled";            
+          left_turn_message.textContent = "Not Turning Left";            
       }
     }
 
@@ -261,14 +263,14 @@
       if (steeringGoalEl)  { steeringGoalEl.textContent  = steering_goal_string; }
     }
 
-    document.getElementById('LeftTurn').addEventListener('click', function () {
+    leftTurnBtn.addEventListener('click', function () {
         socket.send(JSON.stringify({ command: "start_turn_left" }));
         socket.send(JSON.stringify({ command: "stop_turn_right" }));
         
         console.log("Left Turn button clicked");
     });
 
-    document.getElementById('RightTurn').addEventListener('click', function () {
+    rightTurnBtn.addEventListener('click', function () {
         socket.send(JSON.stringify({ command: "start_turn_right" }));
         socket.send(JSON.stringify({ command: "stop_turn_left" }));
         

@@ -14,7 +14,7 @@ import statistics
 logger = logging.getLogger('autopilot')
 logger.setLevel(logging.INFO)
 
-QUEUE_SIZE = 10000
+QUEUE_SIZE = 1000
 
 class Autopilot():
     def __init__(self, can_interface):
@@ -25,6 +25,7 @@ class Autopilot():
         self.current_rudder = 0 #degrees
         self.rudder_goal = 0 #count
         self.autopilot_engaged = False
+        self.autopilot_engaged_event  = threading.Event()
         self.left_turn_engaged = False
         self.right_turn_engaged = False
         
@@ -171,9 +172,11 @@ class Autopilot():
         self.last_turn_time = time.time()
         self.last_shaft_goal = self.shaft_goal
         self.shaft_goal_list = []
+        self.autopilot_engaged_event.clear()
         while True:
             now = time.time()
             time.sleep(0.1)
+            ## This seemed to spin up the system
             self.heading_list.append(self.current_heading)
             self.shaft_list.append(self.can_interface.shaft_value)
             if len(self.heading_list) >= QUEUE_SIZE:
@@ -197,6 +200,7 @@ class Autopilot():
                     self.heading_goal += 1
                     if self.heading_goal >= 360:
                         self.heading_goal -= 360
+            
             self.heading_error = self.heading_goal - self.current_heading
             if self.heading_error < -180:
                 self.heading_error += 360
@@ -207,19 +211,24 @@ class Autopilot():
             self.shaft_goal_list.append(self.shaft_goal)
             self.broadcast_status_message()
             logger.debug(f"heading error: {self.heading_error:.2f}, Computed shaft goal: {self.shaft_goal:.2f}")
-            if self.autopilot_engaged == True:
-                if (now - self.last_shaft_adjust_time) > 1:
-                    self.last_shaft_adjust_time = now
-                    self.shaft_goal_mean = statistics.mean(self.shaft_goal_list)
-                    self.shaft_goal_list = []
-                    if abs(self.shaft_goal_mean - self.last_shaft_goal) > 100: # deadband
-                        # Generate a command and broadcast the steering
-                        self.last_shaft_goal = self.shaft_goal_mean
+            #if self.autopilot_engaged == True:
+            if not self.autopilot_engaged_event.isSet():
+                self.heading_goal = self.current_heading
+                self.error_list = []
+                self.time_list = []
+    
+            if (now - self.last_shaft_adjust_time) > 1:
+                self.last_shaft_adjust_time = now
+                self.shaft_goal_mean = statistics.mean(self.shaft_goal_list)
+                self.shaft_goal_list = []
+                if abs(self.shaft_goal_mean - self.last_shaft_goal) > 100: # deadband
+                    # Generate a command and broadcast the steering
+                    self.last_shaft_goal = self.shaft_goal_mean
+                    if self.autopilot_engaged_event.isSet():
                         self.can_interface.set_shaft_goal(self.shaft_goal)
                         self.can_interface.send_shaft_goal()
                         logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
-            else:
-                self.heading_goal = self.current_heading
+                    
 
             self.log_data()
 
@@ -255,12 +264,13 @@ class Autopilot():
         if len(self.error_list) > self.error_list_length:
             self.time_list.pop(0)
             self.error_list.pop(0)
-            
+        
         self._integral = 0
-        for i in range(1, len(self.time_list)):
-            dt = self.time_list[i] - self.time_list[i-1]
-            avg_val = (self.error_list[i] + self.error_list[i-1]) / 2
-            self._integral += avg_val * dt
+        if len(self.time_list) > 1 and len(self.error_list) > 1:
+            for i in range(1, len(self.time_list)):
+                dt = self.time_list[i] - self.time_list[i-1]
+                avg_val = (self.error_list[i] + self.error_list[i-1]) / 2
+                self._integral += avg_val * dt
 
         derivative = self.compute_slope(self.time_list[-4:], self.error_list[-4:])
 
