@@ -264,16 +264,24 @@
     }
 
     leftTurnBtn.addEventListener('click', function () {
+      if (!leftTurnState) {
         socket.send(JSON.stringify({ command: "start_turn_left" }));
         socket.send(JSON.stringify({ command: "stop_turn_right" }));
-        
+      }
+      else{
+        socket.send(JSON.stringify({ command: "stop_turn_left" }));
+      }
         console.log("Left Turn button clicked");
     });
 
     rightTurnBtn.addEventListener('click', function () {
+      if (!rightTurnState) {
         socket.send(JSON.stringify({ command: "start_turn_right" }));
         socket.send(JSON.stringify({ command: "stop_turn_left" }));
-        
+      }
+      else{
+        socket.send(JSON.stringify({ command: "stop_turn_right" }));
+      }
         console.log("Right Turn button clicked");
     });
 

@@ -216,7 +216,7 @@ class CANinterface:
 
         elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
             engaged = bool(msg.data[0] & 0x01)
-            left = bool(msg.data[0 & 0x10])
+            left = bool(msg.data[0] & 0x10)
             right = bool(msg.data[0] & 0x20)
             #heading_goal = int(self.heading_goal * 100 + 0x8000) & 0xFFFF
             heading_goal = (struct.unpack("<H", msg.data[1:3])[0] - 0x8000 )/ 100.0
