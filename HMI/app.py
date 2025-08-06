@@ -17,6 +17,7 @@ import tornado.httpserver
 import os
 import json
 import logging
+import subprocess
 
 from can_interface import CANinterface
 from autopilot import Autopilot
@@ -33,6 +34,12 @@ autopilot.start()
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("autopilot.html")
+
+class ExitBrowserHandler(tornado.web.RequestHandler):
+    def post(self):
+        # Kill Chromium process
+        subprocess.Popen(["pkill", "chromium"])
+        self.write("Browser closed")
 
 class WSHandler(tornado.websocket.WebSocketHandler):
     def open(self):
@@ -114,6 +121,7 @@ def make_app():
     return tornado.web.Application([
         (r"/", MainHandler),
         (r"/ws", WSHandler),
+        (r"/exit-browser", ExitBrowserHandler)
     ],
     template_path="templates",
     static_path="static",   

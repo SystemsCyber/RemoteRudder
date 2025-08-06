@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Heading & Rudder</title>
+    <title>Autopilot</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -25,6 +25,16 @@
             text-align: center;
             flex: 0 0 auto;
         }
+        
+        footer {
+            background-color: #333;
+            color: white;
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+        }   
 
         .container {
             display: grid;
@@ -212,11 +222,51 @@
         </div>
     </div>
 
-    <!-- <footer>CAN</footer> -->
+    <footer>
+        <div><button id="graphsBtn"><span style="font-size:48px">Graphs</span></button></div>
+        <div><span id="ipAddress">IP Address</span></div>
+        <div><button id="shutdownBtn"><span style="font-size:48px">Exit</span></button></div>
+    </footer>
+    <!-- Custom confirmation modal -->
+    <div id="confirmModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+        <div style="background:white; padding:40px; border-radius:10px; text-align:center; max-width:500px;">
+            <p style="font-size:48px; color:black;">Are you sure you want to exit?</p>
+            <div style="margin-top:20px;">
+                <button id="confirmYes" style="font-size:48px; margin-right:20px; padding:10px 30px;">Yes</button>
+                <button id="confirmNo" style="font-size:48px; padding:10px 30px;">No</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/socket.io.min.js"></script>
     <script src="/static/js/compass.js"></script>
     <script>
-       
+        const shutdownBtn = document.getElementById("shutdownBtn");
+        const confirmModal = document.getElementById("confirmModal");
+        const confirmYes = document.getElementById("confirmYes");
+        const confirmNo = document.getElementById("confirmNo");
+
+        shutdownBtn.addEventListener("click", function () {
+            confirmModal.style.display = "flex"; // Show the modal
+        });
+
+        confirmYes.addEventListener("click", function () {
+            fetch("/exit-browser", { method: "POST" })
+                .then(response => {
+                    if (response.ok) {
+                        console.log("Exit request sent");
+                    } else {
+                        console.error("Failed to send exit request");
+                    }
+                })
+                .catch(err => console.error("Error:", err));
+            confirmModal.style.display = "none"; // Hide modal after click
+        });
+
+        confirmNo.addEventListener("click", function () {
+            confirmModal.style.display = "none"; // Hide modal
+        });
     </script>
 </body>
 </html>
