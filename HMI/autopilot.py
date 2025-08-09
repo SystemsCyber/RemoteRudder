@@ -48,8 +48,8 @@ class Autopilot():
         self._stop_event = threading.Event()
 
         self.Kp = 30 # Proportional gain
-        self.Ki = 0.3
-        self.Kd = 1
+        self.Ki = .5
+        self.Kd = 5
 
         self._integral = 0.0
         self._prev_error = 0.0
@@ -126,7 +126,7 @@ class Autopilot():
             engaged_byte += 0x10 if self.left_turn_engaged else 0
             engaged_byte += 0x20 if self.right_turn_engaged else 0
              
-            heading_goal = int(self.heading_goal * 100 + 0x8000) & 0xFFFF
+            heading_goal = int(self.heading_goal * 10 + 0x8000) & 0xFFFF
             heading_error = int(self.heading_error * 100 + 0x8000) & 0xFFFF
             rudder_goal = int(self.rudder_goal * 100 + 0x8000) & 0xFFFF 
             self.counter += 1 # just a rotating counter for sanity
