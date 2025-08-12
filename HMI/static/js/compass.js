@@ -24,6 +24,8 @@
   const dial       = { dragging:false };
   let autopilotEngaged = false;
   let servoEnabled = false;
+  let rightTurnState = false;
+  let leftTurnState = false;
 
   window.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded: compass.js');
@@ -33,6 +35,10 @@
     const servoStatus = document.getElementById("servoEnabled");
     const autopilotStatus = document.getElementById("autopilotStatus")
     const autopilotBtn = document.getElementById("autopilotBtn");
+    const rightTurnBtn = document.getElementById("RightTurn");
+    const leftTurnBtn = document.getElementById("LeftTurn");
+    const right_turn_message = document.getElementById("right_turn_message");
+    const left_turn_message = document.getElementById("left_turn_message");
     
 
     const socket = new WebSocket('ws://' + location.hostname + ':5000/ws');
@@ -161,19 +167,65 @@
         }
         setAutopilotState(autopilotEngaged)
       }
-    
+
+      if ('left_turn' in data) {
+        try {
+          leftTurnState = data.left_turn;
+        } catch (error) {
+          leftTurnState = false;
+          console.log(error)
+        }
+        setLeftTurnState(leftTurnState)
+      }
+
+      if ('right_turn' in data) {
+        try {
+          rightTurnState = data.right_turn;
+        } catch (error) {
+          rightTurnState = false;
+          console.log(error)
+        }
+        setRightTurnState(rightTurnState)
+      }
     }
 
     autopilotBtn.addEventListener("click", () => {
       if (autopilotEngaged){
         socket.send(JSON.stringify({ command: "autopilot_disable"}));
+        socket.send(JSON.stringify({ command: "servo_disable"}));
       }
       else {
         socket.send(JSON.stringify({ command: "autopilot_enable"}));
       }
     });
 
+    function setRightTurnState(enabled) {
+      if (enabled) {
+          rightTurnBtn.textContent = "Stop Right Turn";
+          rightTurnBtn.classList.remove("disabled");
+          rightTurnBtn.classList.add("enabled");
+          right_turn_message.textContent = "Turning Right";
+      } else {
+          rightTurnBtn.textContent = "Right Turn";
+          rightTurnBtn.classList.remove("enabled");
+          rightTurnBtn.classList.add("disabled");
+          right_turn_message.textContent = "Not Turning Right";            
+      }
+    }
 
+    function setLeftTurnState(enabled) {
+      if (enabled) {
+          leftTurnBtn.textContent = "Stop Left Turn";
+          leftTurnBtn.classList.remove("disabled");
+          leftTurnBtn.classList.add("enabled");
+          left_turn_message.textContent = "Turning Left";
+      } else {
+          leftTurnBtn.textContent = "Left Turn";
+          leftTurnBtn.classList.remove("enabled");
+          leftTurnBtn.classList.add("disabled");
+          left_turn_message.textContent = "Not Turning Left";            
+      }
+    }
 
     function setServoState(enabled) {
         if (enabled) {
@@ -211,15 +263,27 @@
       if (steeringGoalEl)  { steeringGoalEl.textContent  = steering_goal_string; }
     }
 
-    // document.getElementById('btnPortRudder').addEventListener('click', function () {
-    //     socket.send(JSON.stringify({ command: "rudder_left" }));
-    //     console.log("Port Rudder button clicked");
-    // });
+    leftTurnBtn.addEventListener('click', function () {
+      if (!leftTurnState) {
+        socket.send(JSON.stringify({ command: "start_turn_left" }));
+        socket.send(JSON.stringify({ command: "stop_turn_right" }));
+      }
+      else{
+        socket.send(JSON.stringify({ command: "stop_turn_left" }));
+      }
+        console.log("Left Turn button clicked");
+    });
 
-    // document.getElementById('btnStarRudder').addEventListener('click', function () {
-    //     socket.send(JSON.stringify({ command: "rudder_right" }));
-    //     console.log("Starboard Rudder button clicked");
-    // });
+    rightTurnBtn.addEventListener('click', function () {
+      if (!rightTurnState) {
+        socket.send(JSON.stringify({ command: "start_turn_right" }));
+        socket.send(JSON.stringify({ command: "stop_turn_left" }));
+      }
+      else{
+        socket.send(JSON.stringify({ command: "stop_turn_right" }));
+      }
+        console.log("Right Turn button clicked");
+    });
 
 
 
@@ -229,6 +293,8 @@
         if (servoEnabled) {
             // Send the new state to the server
             socket.send(JSON.stringify({ command: "servo_enable"}));
+            socket.send(JSON.stringify({ command: "stop_turn_right" }));
+            socket.send(JSON.stringify({ command: "stop_turn_left" }));
         }
         else {
             // Send the new state to the server
@@ -239,6 +305,8 @@
 
     setServoState(servoEnabled)
     setAutopilotState(autopilotEngaged)
+    setRightTurnState(rightTurnState)
+    setLeftTurnState(leftTurnState)
 
     /* set up buttons for goal adjustment*/
     const btnPort  = document.getElementById('btnPortGoal');
@@ -247,12 +315,16 @@
     if (btnPort) {
       btnPort.addEventListener('click', () => {
         socket.send(JSON.stringify({ command: "heading_left" }));
+        socket.send(JSON.stringify({ command: "stop_turn_right" }));
+        socket.send(JSON.stringify({ command: "stop_turn_left" }));
       });
     }
 
     if (btnStar) {
       btnStar.addEventListener('click', () => {
         socket.send(JSON.stringify({ command: "heading_right" }));
+        socket.send(JSON.stringify({ command: "stop_turn_right" }));
+        socket.send(JSON.stringify({ command: "stop_turn_left" }));
       });
     }
 
@@ -367,7 +439,7 @@
   function fmtDeg(val, digits = 3) {
     try {
       if (typeof val !== 'number' || isNaN(val)) throw new Error('bad');
-      return val.toFixed(0).padStart(digits, '0') + '°';
+      return val.toFixed(0) + '°';
     } catch (e) {
       return '---';
     }
@@ -397,7 +469,13 @@
 
   /* Keep any angle in 0-359 range */
   function clamp360(a) {                     // convenience normaliser
-    return (a % 360 + 360) % 360;
+    if (a >= 360) {
+      a -= 360;
+    }
+    else if (a < 0) {
+      a += 360;
+    };
+    return a;
   }
 
   /* Run once after the page loads, then on every resize/rotate */

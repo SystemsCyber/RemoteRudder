@@ -17,6 +17,7 @@ import tornado.httpserver
 import os
 import json
 import logging
+import subprocess
 
 from can_interface import CANinterface
 from autopilot import Autopilot
@@ -33,6 +34,12 @@ autopilot.start()
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("autopilot.html")
+
+class ExitBrowserHandler(tornado.web.RequestHandler):
+    def post(self):
+        # Kill Chromium process
+        subprocess.Popen(["pkill", "chromium"])
+        self.write("Browser closed")
 
 class WSHandler(tornado.websocket.WebSocketHandler):
     def open(self):
@@ -74,10 +81,28 @@ def handle_client_command(command):
         autopilot.autopilot_engaged = False
     elif command == "autopilot_enable":
         autopilot.autopilot_engaged = True
+        autopilot.autopilot_engaged_event.set()
+        broadcast_can_message(data={"heading_goal": autopilot.heading_goal})
         logger.info("Received Request to Enable Autopilot.")
     elif command == "autopilot_disable":
         autopilot.autopilot_engaged = False
+        autopilot.autopilot_engaged_event.clear()
         logger.info("Received Request to Disable Autopilot.")
+    elif command == "start_turn_left":
+        autopilot.left_turn_engaged = True
+        autopilot.right_turn_engaged = False
+        logger.info("Start Left Turn.")
+    elif command == "start_turn_right":
+        autopilot.left_turn_engaged = False
+        autopilot.right_turn_engaged = True
+        logger.info("Start Right Turn.")
+    elif command == "stop_turn_right":
+        autopilot.right_turn_engaged = False
+        logger.info("Stop Right Turn.")
+    elif command == "stop_turn_left":
+        autopilot.left_turn_engaged = False
+        logger.info("Stop Left Turn.")
+        
 
             
 def broadcast_can_message(data):
@@ -96,9 +121,10 @@ def make_app():
     return tornado.web.Application([
         (r"/", MainHandler),
         (r"/ws", WSHandler),
+        (r"/exit-browser", ExitBrowserHandler)
     ],
     template_path="templates",
-    static_path="static",
+    static_path="static",   
     debug=True)
 
 async def main():

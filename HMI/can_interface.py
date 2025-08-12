@@ -28,7 +28,7 @@ class CANinterface:
             sys.exit()
 
         self.listeners = []
-        self.shaft_goal = 0.0  # Start at 0 degrees
+        self.shaft_goal = 1475  # Start in middle degrees
         self.servo_enabled = False  # track state
 
         # Track last-received time by PGN
@@ -215,13 +215,22 @@ class CANinterface:
                 return {"SOG": self.boat_speed, "COG": heading}
 
         elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
-            engaged = bool(msg.data[0])
-            heading_goal = (struct.unpack_from("<H", msg.data, 1)[0] - 0x8000 )/ 100.0
+            engaged = bool(msg.data[0] & 0x01)
+            left = bool(msg.data[0] & 0x10)
+            right = bool(msg.data[0] & 0x20)
+            #heading_goal = int(self.heading_goal * 10 + 0x8000) & 0xFFFF
+            heading_goal = (struct.unpack("<H", msg.data[1:3])[0] - 0x8000 )/ 10.0
+            if heading_goal < 0:
+                heading_goal += 360
+            elif heading_goal >= 360:
+                heading_goal -= 360
             heading_error = (struct.unpack_from("<H", msg.data, 3)[0] - 0x8000 )/ 100.0
             rudder_goal = (struct.unpack_from("<H", msg.data, 5)[0] - 0x8000 )/ 100.0
             counter = msg.data[7]
             logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Autopilot engaged: {engaged}, heading_goal: {heading_goal:.2f}, heading_error: {heading_error:.2f}, rudder_goal: {rudder_goal:0.2f} ")
             return {
+                "right_turn": right,
+                "left_turn": left,
                 "autopilot_engaged": engaged,
                 "heading_goal": heading_goal,
                 "heading_error": heading_error,
