@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CAN Live Graphs</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  body { margin:0; background:#111; color:#eee; font-family:system-ui, Arial; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto; gap:8px; padding:8px; }
+  .card { background:#1b1b1b; border-radius:12px; padding:6px; }
+  #map { height: 320px; border-radius:12px; }
+  .title { padding:8px; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="title">Live CAN/NMEA Telemetry</div>
+<div class="grid">
+  <div id="rpm" class="card"></div>
+  <div id="speed" class="card"></div>
+  <div id="heading" class="card"></div>
+  <!-- <div id="compass" class="card"></div>
+  <div id="cog" class="card"></div> -->
+  <div class="card"><div id="map"></div></div>
+</div>
+
+<script>
+const charts = {
+  rpm:    {id:"rpm",     name:"Engine RPM", unit:"rpm"},
+  speed:  {id:"speed",   name:"Speed", unit:"mph"},
+  heading:{id:"heading", name:"Heading (deg)", unit:"°"},
+//   compass:{id:"compass", name:"Compass (deg)", unit:"°"},
+//   cog:    {id:"cog",     name:"COG (deg)", unit:"°"}
+};
+
+function makeChart(divId, title) {
+  Plotly.newPlot(divId, [{
+    x: [], y: [], mode: "lines", line: {shape:"linear"}
+  }], {
+    paper_bgcolor:"#1b1b1b", plot_bgcolor:"#1b1b1b",
+    font:{color:"#ddd"}, margin:{l:40,r:20,t:30,b:30},
+    title:{text:title, font:{size:14}},
+    xaxis:{showgrid:false},
+    yaxis:{showgrid:true}
+  }, {displaylogo:false, responsive:true});
+}
+
+Object.values(charts).forEach(c => makeChart(c.id, c.name));
+
+let map = L.map('map', { zoomControl:true }).setView([43.85,-110.61], 12);
+// Swap tiles for offline use; for fully offline, serve MBTiles via a local tileserver or use PMTiles.
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
+let path = L.polyline([], {weight:3}).addTo(map);
+let marker = L.circleMarker([0,0], {radius:5}).addTo(map);
+
+function appendPoint(divId, x, y) {
+  Plotly.extendTraces(divId, {x:[[x]], y:[[y]]}, [0], 1200); // keep ~1200 points (~1 min @20Hz/trace trimmed elsewhere)
+}
+
+const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+ws.onmessage = (ev) => {
+  const d = JSON.parse(ev.data);
+  const t = new Date(d.ts*1000);
+
+//   if (Number.isFinite(d.rpm))         appendPoint("rpm", t, d.rpm);
+  if (Number.isFinite(d.speed))       appendPoint("speed", t, d.speed);
+  if (Number.isFinite(d.heading_deg)) appendPoint("heading", t, d.heading_deg);
+  if (Number.isFinite(d.heading_goal)) appendPoint("heading", t, d.heading_goal);
+  if (Number.isFinite(d.cog_deg))     appendPoint("heading", t, d.cog_deg);
+
+  if (Number.isFinite(d.lat) && Number.isFinite(d.lon)) {
+    const ll = [d.lat, d.lon];
+    path.addLatLng(ll);
+    marker.setLatLng(ll);
+    if (path.getLatLngs().length < 5) map.panTo(ll); // gentle auto-pan at start
+  }
+};
+</script>
+</body>
+</html>

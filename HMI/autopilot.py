@@ -164,7 +164,7 @@ class Autopilot():
     def set_steering_shaft_limits(self, min_val, max_val):
         self.steering_shaft_min = float(min_val)
         self.steering_shaft_max = float(max_val)
-        logger.info(f"Set steering shaft limits: min={self.steering_shaft_min}, max={self.steering_shaft_max}")
+        logger.debug(f"Set steering shaft limits: min={self.steering_shaft_min}, max={self.steering_shaft_max}")
 
 
     def run(self):
@@ -212,7 +212,7 @@ class Autopilot():
             self.broadcast_status_message()
             logger.debug(f"heading error: {self.heading_error:.2f}, Computed shaft goal: {self.shaft_goal:.2f}")
             #if self.autopilot_engaged == True:
-            if not self.autopilot_engaged_event.isSet():
+            if not self.autopilot_engaged_event.is_set():
                 self.heading_goal = self.current_heading
                 self.error_list = []
                 self.time_list = []
@@ -224,7 +224,7 @@ class Autopilot():
                 if abs(self.shaft_goal_mean - self.last_shaft_goal) > 100: # deadband
                     # Generate a command and broadcast the steering
                     self.last_shaft_goal = self.shaft_goal_mean
-                    if self.autopilot_engaged_event.isSet():
+                    if self.autopilot_engaged_event.is_set():
                         self.can_interface.set_shaft_goal(self.shaft_goal)
                         self.can_interface.send_shaft_goal()
                         logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
