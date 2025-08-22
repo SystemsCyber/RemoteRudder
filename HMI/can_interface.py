@@ -9,6 +9,8 @@ import os
 
 from can.io.canutils import CanutilsLogReader
 
+AUTOPILOT_CAN_ID = 0x18FF50E0
+
 # Setup logger
 logger = logging.getLogger('CAN')
 logger.setLevel(logging.INFO)
@@ -26,19 +28,14 @@ class CANinterface:
         else:
             device = 'socketcan'
             channel = channel
-        
-        device = "virtual"
-        channel = "vcan0"
-        self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate, receive_own_messages=True)
-        logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
-        
+         
         # Set the bitrate to 2500000 for all NMEA2000
-        # try:
-        #     self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate, receive_own_messages=True)
-        #     logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
-        # except:
-        #     logger.warning("CAN Interface Error: Please be sure hardware is plugged in.")
-        #     sys.exit()
+        try:
+            self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate, receive_own_messages=True)
+            logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
+        except:
+            logger.warning("CAN Interface Error: Please be sure hardware is plugged in.")
+            sys.exit()
 
         self.listeners = []
         self.shaft_goal = 1475  # Start in middle degrees
@@ -100,7 +97,8 @@ class CANinterface:
 
                 try:
                     # Re-send onto our bus so your read_loop + decoders see it
-                    self.bus.send(msg)
+                    if msg.arbitration_id != AUTOPILOT_CAN_ID:  # Skip autopilot status messages
+                        self.bus.send(msg)
                 except can.CanError as e:
                     logger.error(f"Replay send failed: {e}")
                     await asyncio.sleep(0.001)
@@ -236,10 +234,10 @@ class CANinterface:
                 return {"SOG": SOG_mph, "COG": self.COG}
 
         elif msg.arbitration_id == 0x09F8011C:  # GPS Position, Rapid Update. PGN 129025, 100ms update
-            lat = struct.unpack('<l', msg.data[0:4])[0] / 10000000 #degrees
-            lon = struct.unpack('<l', msg.data[4:8])[0] / 10000000 #degrees
-            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Lat: {lat:.6f}, Lon: {lon:.6f}")
-            return {"lat": lat, "lon": lon}
+            self.lat = struct.unpack('<l', msg.data[0:4])[0] / 10000000 #degrees
+            self.lon = struct.unpack('<l', msg.data[4:8])[0] / 10000000 #degrees
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Lat: {self.lat:.6f}, Lon: {self.lon:.6f}")
+            return {"lat": self.lat, "lon": self.lon}
         
         elif msg.arbitration_id == 0x18FEE81C:  #Vehicle Direction/Speed, PGN 65256, 1 second update
             compass = struct.unpack('<H', msg.data[0:2])[0] * 0.0078125 # degrees
@@ -252,37 +250,42 @@ class CANinterface:
         elif msg.arbitration_id == 0x0CF00400:  #electronic engine control 1, PGN 61444, 10ms update
             if (now - self.rpm_start_time) > self.GUI_TIMEOUT:
                 self.rpm_start_time = now
-                rpm = struct.unpack('<H', msg.data[3:5])[0] * 0.125 # RPM
-                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} rpm: {rpm:.0f}")
-                return {"rpm": round(rpm)}
+                self.rpm = struct.unpack('<H', msg.data[3:5])[0] * 0.125 # RPM
+                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} rpm: {self.rpm:.0f}")
+                return {"rpm": round(self.rpm)}
             else:
                 return None  # Skip processing if too soon
+        
         elif msg.arbitration_id == 0x09F112F8:  # Vessel Heading, PGN 127250 100ms update
             heading_raw = struct.unpack('<H', msg.data[1:3])[0] * 0.0001 * (180 / 3.14159)  # radians to degrees
-            heading = heading_raw + self.heading_correction
+            self.compass_offset = heading_raw - self.COG
+            if self.compass_offset < -180:
+                self.compass_offset += 360
+            elif self.compass_offset >= 180:
+                self.compass_offset -= 360
+            self.compass_heading = heading_raw + self.heading_correction
             if self.boat_speed < 1:
-                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {heading:.2f}")
-                return {"SOG": self.boat_speed, "COG": heading}
+                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {self.compass_heading:.2f}")
+                return {"compass_heading": self.compass_heading}
 
         elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
             engaged = bool(msg.data[0] & 0x01)
             left = bool(msg.data[0] & 0x10)
             right = bool(msg.data[0] & 0x20)
-            #heading_goal = int(self.heading_goal * 10 + 0x8000) & 0xFFFF
-            heading_goal = (struct.unpack("<H", msg.data[1:3])[0] - 0x8000 )/ 10.0
-            if heading_goal < 0:
-                heading_goal += 360
-            elif heading_goal >= 360:
-                heading_goal -= 360
+            self.heading_goal = (struct.unpack("<H", msg.data[1:3])[0] - 0x8000 )/ 10.0
+            if self.heading_goal < 0:
+                self.heading_goal += 360
+            elif self.heading_goal >= 360:
+                self.heading_goal -= 360
             heading_error = (struct.unpack_from("<H", msg.data, 3)[0] - 0x8000 )/ 100.0
             rudder_goal = (struct.unpack_from("<H", msg.data, 5)[0] - 0x8000 )/ 100.0
             counter = msg.data[7]
-            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Autopilot engaged: {engaged}, heading_goal: {heading_goal:.2f}, heading_error: {heading_error:.2f}, rudder_goal: {rudder_goal:0.2f} ")
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Autopilot engaged: {engaged}, heading_goal: {self.heading_goal:.2f}, heading_error: {heading_error:.2f}, rudder_goal: {rudder_goal:0.2f} ")
             return {
                 "right_turn": right,
                 "left_turn": left,
                 "autopilot_engaged": engaged,
-                "heading_goal": heading_goal,
+                "heading_goal": self.heading_goal,
                 "heading_error": heading_error,
                 "rudder_goal": rudder_goal,
             }

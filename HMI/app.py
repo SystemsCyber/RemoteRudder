@@ -13,6 +13,7 @@ import tornado.web
 import tornado.websocket
 import tornado.ioloop
 import tornado.httpserver
+import tornado.autoreload
 import os
 import json
 import logging
@@ -23,6 +24,7 @@ OFFLINE_TEST = True
 OFFLINE_BACKEND = "virtual"        # use python-can virtual bus
 OFFLINE_CHANNEL = "vcan0"          # arbitrary name for virtual bus
 CANDUMP_PATH = r"logs\test_data-21July2025.log"   # <-- set your file here
+CANDUMP_PATH = r"logs\candump-2025-08-06_16442_horsetooth_firstConstants.log"
 REPLAY_SPEED = 1.0                 # 1.0 = realtime
 REPLAY_LOOP = True                 # loop file
 
@@ -37,7 +39,7 @@ logger = logging.getLogger('autopilot')
 logging.basicConfig(level=logging.INFO)
 
 clients = set()
-can_interface = CANinterface(channel='can0')
+can_interface = CANinterface(channel='can0', bitrate=250000, backend=OFFLINE_BACKEND if OFFLINE_TEST else None )
 autopilot = Autopilot(can_interface)
 autopilot.start()
 
@@ -165,10 +167,12 @@ def make_telemetry_snapshot():
     # Pull from Autopilot (fused/commanded)
     heading_deg   = _getattr(autopilot, "current_heading", None)     # fused/estimated heading
     heading_goal  = _getattr(autopilot, "heading_goal", None)
+    heading_error = _getattr(autopilot, "heading_error", None)
     rudder_counts = _getattr(autopilot, "rudder_goal", None)
     rudder_angle  = _getattr(autopilot, "current_rudder", None)
     autopilot_on  = _getattr(autopilot, "autopilot_engaged", None)
     servo_on      = _getattr(can_interface, "servo_enabled", None)
+    compass_offset = _getattr(can_interface, "compass_offset", None)
     
     snap = {
         "ts": time.time(),
@@ -182,14 +186,16 @@ def make_telemetry_snapshot():
         "lat": lat,
         "lon": lon,
         "heading_goal": heading_goal,
+        "headingErr": heading_error,
         "rudder_counts": rudder_counts,
         "autopilot_engaged": bool(autopilot_on) if autopilot_on is not None else None,
         "servo_enabled": bool(servo_on) if servo_on is not None else None,
-        "shaft_goal": shaft_goal
+        "shaft_goal": shaft_goal,
+        "compass_offset": compass_offset
     }
     return snap
 
-async def telemetry_broadcaster(rate_hz: int = 5):
+async def telemetry_broadcaster(rate_hz: int = 10):
     """
     Periodically pushes a consolidated telemetry frame to all WebSocket clients.
     """
@@ -207,7 +213,10 @@ def make_app():
         (r"/", MainHandler),
         (r"/ws", WSHandler),
         (r"/exit-browser", ExitBrowserHandler),
-        (r"/plot",PlotHandler)
+        (r"/plot",PlotHandler),
+        (r"/sw.js", tornado.web.StaticFileHandler,
+            {"path": os.path.join(os.path.dirname(__file__), "static"),
+             "default_filename": "sw.js"}),
     ],
     template_path="templates",
     static_path="static",   
@@ -235,4 +244,10 @@ async def main():
     await can_interface.read_loop()
 
 if __name__ == "__main__":
+    tornado.autoreload.watch("templates/plot_data.html")   # any file you like
+    tornado.autoreload.watch("autopilot.py")   # any file you like
+    tornado.autoreload.watch("can_interface.py")   # any file you like
+    tornado.autoreload.watch("app.py")   # any file you like
+    tornado.autoreload.watch("templates/autopilot.html")   # any file you like
+    tornado.autoreload.start()            # will re-exec the process on change
     tornado.ioloop.IOLoop.current().run_sync(main)

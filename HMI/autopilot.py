@@ -10,6 +10,9 @@ import datetime
 import queue
 import statistics
 
+AUTOPILOT_CAN_ID = 0x18FF50E0
+
+
 # Setup logger
 logger = logging.getLogger('autopilot')
 logger.setLevel(logging.INFO)
@@ -133,12 +136,12 @@ class Autopilot():
 
             data = struct.pack("<BHHHB", engaged_byte, heading_goal, heading_error, rudder_goal, (self.counter & 0xFF))
 
-            msg = can.Message(arbitration_id=0x18FF50E0,  # example PGN (can change)
+            msg = can.Message(arbitration_id=AUTOPILOT_CAN_ID,  # example PGN (can change)
                             data=data,
                             is_extended_id=True)
 
             self.bus.send(msg)
-            logger.debug(f"Sent Autopilot status: {0x18FF50E0:08X} {data.hex()}")
+            logger.debug(f"Sent Autopilot status: {AUTOPILOT_CAN_ID:08X} {data.hex()}")
 
         except can.CanError:
             logger.exception("CAN message failed to send")
