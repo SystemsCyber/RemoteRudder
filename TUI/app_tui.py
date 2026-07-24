@@ -545,9 +545,18 @@ def make_app() -> tornado.web.Application:
             (r"/exit-browser", ExitBrowserHandler),
             (r"/plot", PlotHandler),
             (
-                r"/sw.js",
+                # StaticFileHandler.get() takes a `path` argument that must
+                # come from a capture group in the route regex. The previous
+                # pattern r"/sw.js" captured nothing, and `default_filename`
+                # does not fill the gap -- it only applies to directory
+                # requests -- so every fetch raised
+                #   TypeError: get() missing 1 required positional argument
+                # and returned 500. plot_data.html registers the service
+                # worker on load, so this fired on every visit to /plot and
+                # silently disabled offline tile caching.
+                r"/(sw\.js)",
                 tornado.web.StaticFileHandler,
-                {"path": os.path.join(here, "static"), "default_filename": "sw.js"},
+                {"path": os.path.join(here, "static")},
             ),
         ],
         template_path=os.path.join(here, "templates"),

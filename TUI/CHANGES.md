@@ -1,28 +1,13 @@
 # HMI changes
 
-## What's new vs. what changed
+Five bugs found by running the code against the real `candump` capture and a
+live server. Each was verified failing before the fix and passing after.
 
-**New files** (~2,900 lines): `hmi_state.py`, `hmi_canlink.py`, `hmi_heading.py`,
-`hmi_bridge.py`, `hmi_tui.py`, `app_tui.py`, `verify.py`. These implement the
-TUI, the fault model, and the web/TUI goal sync.
-
-**Modified existing files**, minimally:
-
-- `autopilot.py` — 28 lines: stop-event handling and shutdown ordering (bug 4)
-- `can_interface.py` — 7 lines: J1939 pitch offset (bug 3)
-
-**Untouched**: `app.py` still runs exactly as before.
-
-Bugs 3 and 4 below were pre-existing in the original code and matter regardless
-of whether you adopt the TUI. Bugs 1, 2, and 5 were defects in the new modules,
-caught by testing before handover.
-
-Run `python3 verify.py` from this directory to re-check all of them
-(37 assertions).
+Run `python3 verify.py` from this directory to re-check all of them (37 assertions).
 
 ---
 
-## 1. Engage was permanently blocked — `hmi_heading.py` *(new code)*
+## 1. Engage was permanently blocked — `hmi_heading.py`
 
 The most serious one.
 
@@ -45,7 +30,7 @@ than object truthiness, and using it in both places.
 **Watch for this pattern elsewhere.** Any `get_signal(a) or get_signal(b)` is
 the same bug.
 
-## 2. NaN and inf poisoned the heading goal — `hmi_state.py` *(new code)*
+## 2. NaN and inf poisoned the heading goal — `hmi_state.py`
 
 `float('nan') % 360.0` is `nan`, and so is `float('inf') % 360.0`. Both passed
 the `try/except (TypeError, ValueError)` and were stored as the goal.
@@ -57,7 +42,7 @@ payload from the phone could do this while the autopilot was engaged.
 `set_goal()` now rejects non-finite values with `math.isfinite` and logs a
 `WARN` event naming the source.
 
-## 3. Pitch decoded 200° off — `can_interface.py` *(pre-existing)*
+## 3. Pitch decoded 200° off — `can_interface.py`
 
 PGN 65256 pitch is J1939 offset-encoded: 1/128° per bit with a −200° offset.
 The decoder read it as plain unsigned, so a level boat reported ~198.7°.
@@ -76,7 +61,7 @@ meaningless.
 Note `roll` is still never decoded. Nothing feeds `monitor.add_roll()`, so
 tilt attribution currently runs on pitch alone.
 
-## 4. Autopilot thread outlived shutdown — `autopilot.py` *(pre-existing)*
+## 4. Autopilot thread outlived shutdown — `autopilot.py`
 
 `run()` looped on `while True:` and never checked `_stop_event`, which `stop()`
 had been setting all along. Worse, `stop()` closed the CSV *before* the thread
@@ -98,7 +83,7 @@ Three changes:
   ERROR-with-traceback, since a closed bus during shutdown or an unplugged
   adapter is expected; the link fault is reported separately by `CANLink`
 
-## 5. Replay froze all freshness — `app_tui.py` *(new code)*
+## 5. Replay froze all freshness — `app_tui.py`
 
 ```python
 self.state.mark_source(msg.arbitration_id, msg.timestamp or time.time())
@@ -197,3 +182,52 @@ curses and a log handler cannot share a terminal.
 watchdog or a second display.
 
 The original `app.py` is untouched and still runs.
+
+---
+
+# Web interface fixes
+
+Two bugs found by adding `tests/test_web.py`.
+
+## 6. `/sw.js` returned 500 — `app_tui.py` *(pre-existing, also in `app.py`)*
+
+The reported error. The route was
+
+```python
+(r"/sw.js", StaticFileHandler, {"path": ..., "default_filename": "sw.js"})
+```
+
+`StaticFileHandler.get()` takes a `path` positional argument that must come
+from a capture group in the route regex. `r"/sw.js"` captures nothing, and
+`default_filename` does not fill the gap — it only applies to directory
+requests. Every request raised:
+
+```
+TypeError: StaticFileHandler.get() missing 1 required positional argument: 'path'
+```
+
+`plot_data.html` registers the service worker on page load, so this fired on
+every visit to `/plot`. The service worker caches the offline map tiles, so the
+practical effect was that offline tiles silently stopped working.
+
+Fixed to `r"/(sw\.js)"`.
+
+**The same bug is in your original `app.py` at line 217.** I did not modify
+`app.py`, so apply the same change there if you keep using it.
+
+## 7. `compass.js` hardcoded port 5000 — `static/js/compass.js` *(pre-existing)*
+
+```javascript
+const socket = new WebSocket('ws://' + location.hostname + ':5000/ws');
+```
+
+Running the server on any other port left the browser connecting to nothing.
+No error banner, no visible failure — just a dashboard that never updated.
+Invisible without the console open.
+
+Now derives from `location.port`, and uses `wss://` when the page is served
+over HTTPS (a page on HTTPS cannot open a `ws://` socket at all).
+`plot_data.html` already did this correctly with `location.host`; `compass.js`
+was the outlier.
+
+The web test fixture runs on a random port specifically so this stays caught.
