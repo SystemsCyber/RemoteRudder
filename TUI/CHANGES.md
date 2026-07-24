@@ -231,3 +231,109 @@ over HTTPS (a page on HTTPS cannot open a `ws://` socket at all).
 was the outlier.
 
 The web test fixture runs on a random port specifically so this stays caught.
+
+---
+
+# Round 3: COG-primary steering, manual control, touch UI
+
+Six operator-requested changes after on-water testing with the July 2026
+captures. The compass finding drives most of it.
+
+## The compass is stuck (drives items 5, and the whole COG-primary design)
+
+In all three July 2026 captures the magnetic compass never reads above ~264
+deg, while COG spans the full 0-360 in the same runs. The boat pointed every
+direction; the compass did not follow. The magnetometer is stuck or badly
+calibrated, so on this hull COG is the only trustworthy heading whenever the
+boat is moving. `test_cog_primary.py::test_compass_ceiling_is_visible_in_data`
+documents this so a future healthy-compass capture flags that the rationale
+has changed.
+
+## 8. COG-primary fusion -- `hmi_bridge.py`
+
+`derive_fused` was compass-first; inverted to COG-first. New behaviour:
+
+- moving with COG          -> lock to COG (`heading_source="COG"`, `cog_lock=True`)
+- COG drops out at speed   -> brief bridge on the compass, but NO lock, so the
+                              autopilot holds rather than chases the bad sensor
+- below 1.6 mph (COG_MIN)  -> no usable heading: fused goes None, rudder centers
+                              and waits for motion
+
+This suits the hull: V-drive ski/wakeboard boat, fixed prop, small rudder,
+steers only with forward way on. `heading_source` and `cog_lock` are new state
+fields, surfaced in the snapshot, TUI status panel, and web payload.
+
+## 9. Autopilot honors COG lock -- `autopilot.py`
+
+- `set_cog_lock()`: when engaged without a lock, hold the last rudder command
+  (do not center, do not disengage); re-acquire when COG returns
+- no steerage way (heading None): center the rudder once and wait
+- wired `set_heading()` into the health tick -- the autopilot's
+  `current_heading` was never actually being fed before, so the control loop
+  ran on a heading frozen at 0
+- fixed several None-poisoning crashes that surfaced once real heading flowed:
+  `heading_goal = current_heading` set the goal to None on disengage when there
+  was no lock, which then crashed the CSV logger's `round()`
+
+## 10. Engage seeds goal + requires lock -- `app_tui.py`
+
+Engaging now always seeds the goal at the current heading (hold present course,
+never turn toward a stale setpoint) and refuses without a COG lock, with a
+clear reason. The heading-noise interlock still applies first.
+
+## 11. Manual steering -- `app_tui.py`, `hmi_tui.py`
+
+`.` and `,` step the rudder motor +-2 degrees (`MANUAL_STEP_DEGREES`), only
+while disengaged. Auto-enables the servo so the step actually moves the motor.
+Disengaged-only makes manual and autopilot mutually exclusive by construction:
+a manual input can never fight the autopilot. This is the fallback for a lost
+lock or a deteriorated sensor -- keep the boat under control by hand.
+
+## 12. Key remap -- `hmi_tui.py`
+
+| Key | Was | Now |
+|-----|-----|-----|
+| Up arrow | goal +5 | snap goal to current heading (was Home + Fn) |
+| Home | snap | (retired) |
+| `.` / `,` | goal +-10 | manual motor step R / L |
+| `[` / `]` | manual rudder | goal +-10 |
+| Down arrow | goal -5 | goal -5 (unchanged) |
+| arrows L/R | goal +-1 | unchanged |
+
+Up replaces Home because the operator's keyboard needed the Fn key for Home.
+
+## 13. 120-wide layout + touch buttons -- `hmi_tui.py`
+
+- three-panel top row at >=118 cols: HEADING, RUDDER/DRIVE, and a new STATUS
+  panel showing the COG-lock state (green COG LOCK / amber COMPASS weak / red
+  NO LOCK) plus engage and servo indicators
+- touch button bar: STEP L/R, SNAP, ENGAGE, DISENG, SERVO, CLR, QUIT. Buttons
+  reflect state and disable themselves to match the command rules (engage greys
+  out without a lock; manual steps grey out while engaged), so the touchscreen
+  can never do what the keyboard would refuse
+- mouse/touch enabled via curses.mousemask; taps map to button spans recorded
+  each frame
+- removed the extra blank lines the operator reported; the events area now
+  sizes to fill the gap so the button bar sits directly above the footer
+- 80-col fallback unchanged: two panels, indicators in the rudder panel
+
+## 14. PEAK adapter hotplug -- `docs/PCAN_HOTPLUG.md`
+
+Config so `can0` comes up at 250000 automatically on plug-in: a
+systemd-networkd `.network` file (bitrate + bus-off recovery), a udev rule
+matching the `peak_usb` driver, an optional stable-name link file, and
+verification steps that tie back to the HMI's link-health panel.
+
+## Tests
+
+New: `test_cog_primary.py` (11), `test_manual_control.py` (22),
+`test_touch_buttons.py` (19). Updated `test_tui.py`, `test_tui_render.py`, and
+`test_integration.py` for the new key map and COG-primary fusion. Two new real
+fixtures: `planing_2026.log` (13-25 mph, 0% below COG threshold) and
+`docking_2026.log` (86% below). Total 438 passing, 10 hardware-gated skips.
+
+## Item 3 (offline 500) -- not reproduced
+
+Could not reproduce a 500 on any route, online or offline; every route returned
+200. The OSM tile URL in plot_data.html fails offline, but that is a
+client-side tile fetch, not a server 500. Left for a captured traceback.

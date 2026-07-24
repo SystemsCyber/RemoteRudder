@@ -22,6 +22,12 @@ from hmi_state import SystemState
 
 logger = logging.getLogger("bridge")
 
+# Minimum SOG (mph) for COG to be a usable heading. Below this the boat has no
+# steerage way, COG degrades to GPS noise, and -- on this hull -- there is no
+# trustworthy heading at all, so the autopilot centers and waits for motion.
+# This is the single knob that governs the "wait for motion" behaviour.
+COG_MIN_SPEED_MPH = 1.6
+
 # decoded-dict key -> signal name
 KEY_TO_SIGNAL = {
     "steering_angle": "steering_angle",
@@ -133,17 +139,47 @@ class Bridge:
         """
         Periodic fallback fusion. Called on the health tick.
 
-        Deliberately simple: prefer a fresh compass, else fall back to COG
-        when the boat is moving fast enough for COG to mean anything. The
-        real Kalman filter supersedes this entirely; this exists so the
-        FUSED row is never blank on the bench.
+        COG-primary, by deliberate design for this hull. It is a V-drive
+        ski/wakeboard boat with a fixed prop and a small rudder: it only steers
+        with forward way on, and its magnetic compass is unreliable (in the
+        captured runs the compass never reads above 264 deg while COG spans the
+        full circle, i.e. the magnetometer is stuck or badly calibrated). So
+        the trustworthy heading is course-over-ground whenever the boat is
+        moving, and the compass is only a low-confidence backup for the brief
+        moments COG drops out at speed.
+
+        Below the COG threshold there is no usable heading at all -- COG is
+        GPS-noise at rest and the compass cannot be trusted -- so fused goes
+        None and the autopilot centers the rudder and waits for motion. That
+        "wait for motion" behaviour is the point: with no steerage way there is
+        nothing useful the rudder can do anyway.
+
+        The Kalman filter supersedes this; it should keep the same COG-primary
+        weighting for this hull.
         """
         st = self.state
         comp = st.get_signal("compass_heading")
         cog = st.get_signal("cog")
         sog = st.signal_value("sog") or 0.0
 
-        if comp is not None and comp.is_valid():
-            st.set_signal("fused_heading", comp.value, comp.last_rx)
-        elif cog is not None and cog.is_valid() and sog >= 1.6:
+        cog_ok = cog is not None and cog.is_valid() and sog >= COG_MIN_SPEED_MPH
+        comp_ok = comp is not None and comp.is_valid()
+
+        if cog_ok:
             st.set_signal("fused_heading", cog.value, cog.last_rx)
+            st.heading_source = "COG"
+            st.cog_lock = True
+        elif comp_ok and sog >= COG_MIN_SPEED_MPH:
+            # Moving, but COG dropped out. Compass is weak on this boat, so
+            # this is a bridge for a few frames, not a heading to trust for
+            # long. Marked distinctly so the autopilot can hold rather than
+            # chase it.
+            st.set_signal("fused_heading", comp.value, comp.last_rx)
+            st.heading_source = "COMPASS"
+            st.cog_lock = False
+        else:
+            # No steerage way, or no usable heading. Clear fused so the
+            # autopilot centers and waits.
+            st.set_signal("fused_heading", None)
+            st.heading_source = "NONE"
+            st.cog_lock = False

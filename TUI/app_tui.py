@@ -64,6 +64,11 @@ from hmi_state import SystemState
 
 logger = logging.getLogger("hmi")
 
+# Degrees of rudder-shaft travel per manual step (. and , keys). "A couple
+# degrees" per the operator: enough to feel on the water, small enough to
+# creep the boat rather than throw it. Manual steps are disengaged-only.
+MANUAL_STEP_DEGREES = 2.0
+
 
 def setup_logging(use_tui: bool, level: str = "INFO") -> None:
     root = logging.getLogger()
@@ -232,6 +237,16 @@ class HMIApp:
                 st.clear_fault(c)
             return
 
+        if command == "snap_goal":
+            # Set the goal to the current heading. Reachable from a phone
+            # button; the TUI handles its own snap locally.
+            hv = st.signal_value("fused_heading")
+            if hv is None:
+                hv = st.signal_value("compass_heading")
+            if hv is not None:
+                self.set_goal(float(hv), source)
+            return
+
         if ap is None or ci is None:
             st.log_event("WARN", f"command '{command}' ignored, CAN not ready")
             return
@@ -240,6 +255,24 @@ class HMIApp:
             ci.adjust_shaft_goal(-5)
         elif command == "rudder_right":
             ci.adjust_shaft_goal(5)
+        elif command in ("manual_step_left", "manual_step_right"):
+            # Manual steering: nudge the motor a couple degrees. Only when
+            # disengaged, so a manual input can never fight the autopilot --
+            # the operator disengages first, then steers by hand. This is the
+            # fallback for a lost COG lock or a deteriorated sensor: keep the
+            # boat under control without the autopilot.
+            if st.autopilot_engaged:
+                st.log_event("WARN", "manual step ignored: disengage first")
+                if self.tui:
+                    self.tui.flash("disengage before manual steering", 2.5)
+            else:
+                # Ensure the servo is live so the step actually moves the motor.
+                if not st.servo_enabled:
+                    ci.set_servo_enabled(True)
+                    st.servo_enabled = True
+                step = MANUAL_STEP_DEGREES if command == "manual_step_right" else -MANUAL_STEP_DEGREES
+                ci.adjust_shaft_goal(step)
+                st.log_event("CMD", f"manual step {'R' if step > 0 else 'L'} {abs(step)}deg <- {source}")
         elif command == "heading_left":
             self.adjust_goal(-1, source)
         elif command == "heading_right":
@@ -263,15 +296,26 @@ class HMIApp:
                     self.tui.flash(f"ENGAGE BLOCKED: {why}", 4.0)
                 safe_broadcast({"engage_blocked": why})
                 return
-            # Seed the goal at the current heading so engaging does not
-            # immediately command a turn toward a stale setpoint.
+            # This hull only steers with way on and a trusted COG. Refuse to
+            # engage without a lock rather than centering into a heading the
+            # boat cannot hold.
+            if not st.cog_lock:
+                msg = "no COG lock -- need forward motion to engage"
+                st.log_event("BLOCK", f"engage refused: {msg}")
+                if self.tui:
+                    self.tui.flash(f"ENGAGE BLOCKED: {msg}", 4.0)
+                safe_broadcast({"engage_blocked": msg})
+                return
+            # Always seed the goal at the current heading so engaging holds the
+            # present course instead of turning toward a stale setpoint.
             hv = st.signal_value("fused_heading")
             if hv is not None:
                 self.set_goal(float(hv), f"engage/{source}")
+                self.autopilot.heading_goal = float(hv)
             ap.autopilot_engaged = True
             ap.autopilot_engaged_event.set()
             st.autopilot_engaged = True
-            st.log_event("CMD", f"AUTOPILOT ENGAGED <- {source} ({why})")
+            st.log_event("CMD", f"AUTOPILOT ENGAGED <- {source} (hold {hv:.1f})")
         elif command == "autopilot_disable":
             ap.autopilot_engaged = False
             ap.autopilot_engaged_event.clear()
@@ -478,6 +522,17 @@ class HMIApp:
                 self.bridge.derive_fused()
                 self.monitor.update_state()
                 if self.autopilot is not None:
+                    # Push the fused heading and lock state into the autopilot.
+                    # This is what actually feeds the control loop -- without
+                    # it the autopilot's current_heading never updates. When
+                    # fused is None (no steerage way), pass None so the loop
+                    # centers and waits.
+                    fused = self.state.signal_value("fused_heading")
+                    if fused is not None:
+                        self.autopilot.set_heading(float(fused))
+                    else:
+                        self.autopilot.current_heading = None
+                    self.autopilot.set_cog_lock(self.state.cog_lock)
                     self.state.heading_error = self.autopilot.heading_error
                     self.state.set_signal("shaft_center", self.autopilot.shaft_center)
             except Exception:

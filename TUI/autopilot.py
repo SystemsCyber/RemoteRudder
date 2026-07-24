@@ -25,6 +25,10 @@ class Autopilot():
         self.bus = can_interface.bus
         self.heading_goal = 0 #degrees
         self.current_heading = 0 #degrees
+        # COG-lock gating. When engaged without a lock, hold last rudder.
+        # When there is no steerage way at all, center and wait.
+        self._cog_lock = False
+        self._centered = False
         self.current_rudder = 0 #degrees
         self.rudder_goal = 0 #count
         self.autopilot_engaged = False
@@ -116,6 +120,19 @@ class Autopilot():
         except:
             logger.exception("Invalid heading goal setting.")
 
+    def set_cog_lock(self, locked: bool):
+        """
+        Tell the autopilot whether the active heading is a trusted COG lock.
+
+        When False while engaged, the loop holds the last rudder command
+        instead of chasing a heading it cannot trust (a dropped COG at speed,
+        or the weak compass). It does NOT center: on a boat still making way,
+        holding a small standing correction is safer than snapping the rudder
+        amidships. Centering is reserved for loss of steerage way, which shows
+        up as fused_heading going None and the boat slowing below COG_MIN.
+        """
+        self._cog_lock = bool(locked)
+
     def broadcast_status_message(self):
         try:
             # Construct CAN data
@@ -200,8 +217,9 @@ class Autopilot():
             if self._stop_event.wait(0.1):
                 break
             ## This seemed to spin up the system
-            self.heading_list.append(self.current_heading)
-            self.shaft_list.append(self.can_interface.shaft_value)
+            if self.current_heading is not None:
+                self.heading_list.append(self.current_heading)
+                self.shaft_list.append(self.can_interface.shaft_value)
             if len(self.heading_list) >= QUEUE_SIZE:
                 shaft_mean = statistics.mean(self.shaft_list)
                 heading_mean = statistics.mean(self.heading_list)
@@ -224,33 +242,65 @@ class Autopilot():
                     if self.heading_goal >= 360:
                         self.heading_goal -= 360
             
-            self.heading_error = self.heading_goal - self.current_heading
-            if self.heading_error < -180:
-                self.heading_error += 360
-            elif self.heading_error > 180:
-                self.heading_error -= 360
-            
-            self.shaft_goal = self.compute_rudder_command()
-            self.shaft_goal_list.append(self.shaft_goal)
-            self.broadcast_status_message()
-            logger.debug(f"heading error: {self.heading_error:.2f}, Computed shaft goal: {self.shaft_goal:.2f}")
+            if self.current_heading is None:
+                # No heading this cycle. Leave heading_error stale and skip the
+                # PID; the command-send block below will center or hold based
+                # on engagement and lock state.
+                self.heading_error = 0.0
+                self.broadcast_status_message()
+            else:
+                self.heading_error = self.heading_goal - self.current_heading
+                if self.heading_error < -180:
+                    self.heading_error += 360
+                elif self.heading_error > 180:
+                    self.heading_error -= 360
+
+                self.shaft_goal = self.compute_rudder_command()
+                self.shaft_goal_list.append(self.shaft_goal)
+                self.broadcast_status_message()
+                logger.debug(f"heading error: {self.heading_error:.2f}, Computed shaft goal: {self.shaft_goal:.2f}")
             #if self.autopilot_engaged == True:
             if not self.autopilot_engaged_event.is_set():
-                self.heading_goal = self.current_heading
+                # Track current heading while disengaged so engaging holds the
+                # present course. Keep the last goal if there is no heading
+                # right now rather than poisoning it with None.
+                if self.current_heading is not None:
+                    self.heading_goal = self.current_heading
                 self.error_list = []
                 self.time_list = []
     
             if (now - self.last_shaft_adjust_time) > 1:
                 self.last_shaft_adjust_time = now
-                self.shaft_goal_mean = statistics.mean(self.shaft_goal_list)
+                if self.shaft_goal_list:
+                    self.shaft_goal_mean = statistics.mean(self.shaft_goal_list)
                 self.shaft_goal_list = []
-                if abs(self.shaft_goal_mean - self.last_shaft_goal) > 100: # deadband
-                    # Generate a command and broadcast the steering
-                    self.last_shaft_goal = self.shaft_goal_mean
-                    if self.autopilot_engaged_event.is_set():
+
+                engaged = self.autopilot_engaged_event.is_set()
+                have_heading = self.current_heading is not None
+
+                if engaged and not have_heading:
+                    # No steerage way / no usable heading: center the rudder
+                    # once and wait for motion. Sending center repeatedly would
+                    # fight the deadband, so latch it.
+                    if not self._centered:
+                        self.can_interface.set_shaft_goal(self.shaft_center)
+                        self.can_interface.send_shaft_goal()
+                        self._centered = True
+                        logger.info("No heading: centering rudder, waiting for motion")
+                elif engaged and not self._cog_lock:
+                    # Moving but COG lock lost: hold the last rudder command.
+                    # Do not send anything new; do not center. The boat keeps
+                    # whatever standing correction it had until COG returns.
+                    self._centered = False
+                elif engaged:
+                    self._centered = False
+                    if abs(self.shaft_goal_mean - self.last_shaft_goal) > 100:  # deadband
+                        self.last_shaft_goal = self.shaft_goal_mean
                         self.can_interface.set_shaft_goal(self.shaft_goal)
                         self.can_interface.send_shaft_goal()
                         logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
+                else:
+                    self._centered = False
                     
 
             self.log_data()
@@ -263,7 +313,7 @@ class Autopilot():
             now,
             rel_time,
             round(self.heading_goal, 2),
-            round(self.current_heading, 2),
+            round(self.current_heading, 2) if self.current_heading is not None else "",
             round(self.heading_error, 2),
             round(self.rudder_goal, 2),
             round(self.current_rudder, 2),

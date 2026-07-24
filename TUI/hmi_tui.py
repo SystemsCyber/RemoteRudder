@@ -67,6 +67,8 @@ class TUI:
         self._flash_msg = ""
         self._last_goal_source = ""
         self._last_goal_at = 0.0
+        self._buttons = []  # [(y, x0, x1, cmd, enabled)] rebuilt each render
+        self._mouse_ok = False
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -76,6 +78,15 @@ class TUI:
         curses.curs_set(0)
         scr.nodelay(True)
         scr.keypad(True)
+        # Enable touch/mouse. BUTTON1_CLICKED covers a tap on most touch
+        # drivers (they synthesize a left click). Wrapped in try/except
+        # because not every terminal supports mouse, and a headless one must
+        # still run.
+        try:
+            curses.mousemask(curses.BUTTON1_CLICKED | curses.BUTTON1_PRESSED)
+            self._mouse_ok = True
+        except curses.error:
+            self._mouse_ok = False
         if curses.has_colors():
             curses.start_color()
             curses.use_default_colors()
@@ -107,6 +118,13 @@ class TUI:
                 return
             if ch == -1:
                 return
+            if ch == curses.KEY_MOUSE:
+                try:
+                    _id, mx, my, _z, _bstate = curses.getmouse()
+                    self._on_touch(my, mx)
+                except curses.error:
+                    pass
+                continue
             self._handle_key(ch)
 
     def _handle_key(self, ch: int) -> None:
@@ -114,15 +132,17 @@ class TUI:
             self.on_goal_delta(-1.0)
         elif ch == curses.KEY_RIGHT:
             self.on_goal_delta(+1.0)
-        elif ch == curses.KEY_SLEFT or ch == ord(","):
+        elif ch == ord("[") or ch == curses.KEY_SLEFT:
             self.on_goal_delta(-10.0)
-        elif ch == curses.KEY_SRIGHT or ch == ord("."):
+        elif ch == ord("]") or ch == curses.KEY_SRIGHT:
             self.on_goal_delta(+10.0)
-        elif ch == curses.KEY_UP:
-            self.on_goal_delta(+5.0)
         elif ch == curses.KEY_DOWN:
             self.on_goal_delta(-5.0)
-        elif ch == curses.KEY_HOME or ch == ord("h"):
+        elif ch == curses.KEY_UP:
+            # Up arrow snaps the goal to the current heading (was Home, which
+            # needed the Fn key on the operator's keyboard). "Set goal to
+            # current heading" is the most common pre-engage action, so it
+            # gets the easiest-to-reach key.
             hv = self.state.signal_value("fused_heading")
             if hv is None:
                 hv = self.state.signal_value("compass_heading")
@@ -131,6 +151,12 @@ class TUI:
                 self.flash(f"goal snapped to {float(hv):.1f}")
             else:
                 self.flash("no heading available")
+        elif ch == ord("."):
+            # Manual motor step right. Disengaged-only; the command handler
+            # enforces that and flashes if the autopilot is engaged.
+            self.on_command("manual_step_right")
+        elif ch == ord(","):
+            self.on_command("manual_step_left")
         elif ch in (ord("e"), ord("E")):
             self.on_command("autopilot_enable")
         elif ch in (ord("d"), ord("D")):
@@ -139,10 +165,6 @@ class TUI:
             self.on_command(
                 "servo_disable" if self.state.servo_enabled else "servo_enable"
             )
-        elif ch == ord("["):
-            self.on_command("rudder_left")
-        elif ch == ord("]"):
-            self.on_command("rudder_right")
         elif ch in (ord("c"), ord("C")):
             self.on_command("clear_faults")
             self.flash("faults cleared")
@@ -216,15 +238,34 @@ class TUI:
 
         st = self.state
         now = time.time()
+        self._buttons = []  # rebuilt every frame; touch maps against this
         self.scr.erase()
 
+        # Layout. At >=118 cols we run three panels across the top so the
+        # rudder panel stops sprawling into dead space and the heading-source
+        # status gets a home. Narrower than that, fall back to the two-panel
+        # stack the 80-col terminal needs.
+        wide = cols >= 118
         self._draw_header(0, cols, now)
-        self._draw_heading_panel(2, 0, 38)
-        self._draw_rudder_panel(2, 39, cols - 39)
-        self._draw_sources_panel(11, 0, cols, now)
-        log_top = 11 + min(3 + len(st.sources), 9)
+        if wide:
+            self._draw_heading_panel(2, 0, 38)
+            self._draw_rudder_panel(2, 39, 40)
+            self._draw_status_panel(2, 80, cols - 80)
+        else:
+            self._draw_heading_panel(2, 0, 38)
+            self._draw_rudder_panel(2, 39, cols - 39)
+
+        src_top = 11
+        self._draw_sources_panel(src_top, 0, cols, now)
+        src_h = min(3 + len(st.sources), 9)
+        log_top = src_top + src_h
         self._draw_faults(log_top, cols)
-        self._draw_events(log_top + 2, cols, rows - (log_top + 2) - 2)
+
+        # Reserve two rows at the bottom: the button bar and the key footer.
+        btn_row = rows - 2
+        events_h = btn_row - (log_top + 1) - 1
+        self._draw_events(log_top + 1, cols, max(events_h, 0))
+        self._draw_buttons(btn_row, cols)
         self._draw_footer(rows - 1, cols, now)
 
         self.scr.refresh()
@@ -354,8 +395,14 @@ class TUI:
             self._put(row, x + 10, self._fmt(val, spec, 8), curses.A_BOLD)
             row += 1
 
-        # Engage indicators on the right of this panel
-        ix = x + 22
+        # In the narrow (two-panel) layout there is no status panel, so the
+        # engage/servo indicators live here on the right. In the wide layout
+        # the status panel owns them and this space stays clean.
+        if w >= 40:
+            self._draw_indicators(y, x + 24)
+
+    def _draw_indicators(self, y: int, ix: int) -> None:
+        st = self.state
         ap_attr = (
             curses.color_pair(C_OK) | curses.A_BOLD | curses.A_REVERSE
             if st.autopilot_engaged
@@ -375,9 +422,51 @@ class TUI:
         elif st.right_turn:
             self._put(y + 4, ix, " TURN R >> ", curses.color_pair(C_WARN) | curses.A_BOLD)
 
-        # COG accept/reject from the filter
+    def _draw_status_panel(self, y: int, x: int, w: int) -> None:
+        """
+        Wide-layout only. Heading-source lock state (item 5) plus the engage
+        and servo indicators, given room to breathe.
+        """
+        st = self.state
+        self._box(y, x, 9, w, "STATUS")
+
+        # Heading source is the headline: COG lock is what lets the autopilot
+        # steer this boat, so it gets the top line in a color that reads at a
+        # glance -- green locked, amber bridging on compass, red none.
+        src = st.heading_source
+        if src == "COG":
+            src_attr = curses.color_pair(C_OK) | curses.A_BOLD
+            src_txt = "COG LOCK"
+        elif src == "COMPASS":
+            src_attr = curses.color_pair(C_WARN) | curses.A_BOLD
+            src_txt = "COMPASS (weak)"
+        else:
+            src_attr = curses.color_pair(C_ERR) | curses.A_BOLD
+            src_txt = "NO LOCK - wait for way"
+        self._put(y + 1, x + 2, "HEADING SRC", curses.color_pair(C_DIM))
+        self._put(y + 2, x + 2, src_txt, src_attr)
+
+        # Engage + servo indicators
+        ap_attr = (
+            curses.color_pair(C_OK) | curses.A_BOLD | curses.A_REVERSE
+            if st.autopilot_engaged
+            else curses.color_pair(C_DIM)
+        )
+        self._put(y + 4, x + 2, " AUTOPILOT " if st.autopilot_engaged else " autopilot ", ap_attr)
+        sv_attr = (
+            curses.color_pair(C_OK) | curses.A_BOLD | curses.A_REVERSE
+            if st.servo_enabled
+            else curses.color_pair(C_DIM)
+        )
+        self._put(y + 4, x + 15, "  SERVO  " if st.servo_enabled else "  servo  ", sv_attr)
+
+        if st.left_turn:
+            self._put(y + 6, x + 2, " << TURN L ", curses.color_pair(C_WARN) | curses.A_BOLD)
+        elif st.right_turn:
+            self._put(y + 6, x + 2, " TURN R >> ", curses.color_pair(C_WARN) | curses.A_BOLD)
+
         self._put(
-            y + 6, ix,
+            y + 7, x + 2,
             f"COG ok {st.cog_accepted} rej {st.cog_rejected}",
             curses.color_pair(C_DIM),
         )
@@ -446,15 +535,89 @@ class TUI:
             self._put(row, 17, text[: cols - 18], attr)
             row += 1
 
+    def _draw_buttons(self, y: int, cols: int) -> None:
+        """
+        Touch button bar. Each button records its screen span in self._buttons
+        so a mouse/touch event can be mapped back to a command. The same
+        actions are on the keyboard; this is the touchscreen affordance.
+
+        Buttons reflect state: engage is disabled without a COG lock (the
+        thing that most often surprises the operator), and manual steps are
+        disabled while engaged, matching the command handler's rules.
+        """
+        st = self.state
+        engaged = st.autopilot_engaged
+        can_engage = st.cog_lock and not engaged
+        can_manual = not engaged
+
+        # (label, command, enabled)
+        specs = [
+            ("< STEP", "manual_step_left", can_manual),
+            ("STEP >", "manual_step_right", can_manual),
+            (" SNAP ", "snap_goal", True),
+            ("ENGAGE" if not engaged else "  ON  ", "autopilot_enable", can_engage),
+            ("DISENG", "autopilot_disable", engaged),
+            ("SERVO", "servo_toggle", True),
+            ("CLR FLT", "clear_faults", True),
+            (" QUIT ", "quit", True),
+        ]
+
+        x = 1
+        for label, cmd, enabled in specs:
+            text = f" {label} "
+            if enabled:
+                attr = curses.color_pair(C_HEAD) | curses.A_REVERSE | curses.A_BOLD
+            else:
+                attr = curses.color_pair(C_DIM) | curses.A_DIM
+            if x + len(text) >= cols - 1:
+                break
+            self._put(y, x, text, attr)
+            # Record the touch target even when disabled, so a tap gives
+            # feedback ("engage blocked") rather than doing nothing silently.
+            self._buttons.append((y, x, x + len(text), cmd, enabled))
+            x += len(text) + 1
+
+    def _on_touch(self, my: int, mx: int) -> None:
+        """Map a mouse/touch coordinate to a button command."""
+        for (by, bx0, bx1, cmd, enabled) in self._buttons:
+            if my == by and bx0 <= mx < bx1:
+                if not enabled:
+                    self.flash("action unavailable right now", 2.0)
+                    return
+                self._dispatch_button(cmd)
+                return
+
+    def _dispatch_button(self, cmd: str) -> None:
+        if cmd == "snap_goal":
+            hv = self.state.signal_value("fused_heading")
+            if hv is None:
+                hv = self.state.signal_value("compass_heading")
+            if hv is not None:
+                self.on_goal_set(float(hv))
+                self.flash(f"goal snapped to {float(hv):.1f}")
+            else:
+                self.flash("no heading available")
+        elif cmd == "servo_toggle":
+            self.on_command(
+                "servo_disable" if self.state.servo_enabled else "servo_enable"
+            )
+        elif cmd == "clear_faults":
+            self.on_command("clear_faults")
+            self.flash("faults cleared")
+        else:
+            self.on_command(cmd)
+
     def _draw_footer(self, y: int, cols: int, now: float) -> None:
         if now < self._flash_until:
             self._put(y, 0, " " * (cols - 1), curses.color_pair(C_HEAD))
             self._put(y, 1, self._flash_msg[: cols - 2],
                       curses.color_pair(C_HEAD) | curses.A_BOLD)
             return
+        # Reflects the current key map: arrows +-1, brackets +-10, down -5,
+        # up snaps to heading, comma/dot are manual motor steps.
         keys = (
-            "<-/-> +-1  ,/. +-10  ^/v +-5  [Home] snap  "
-            "[e]ngage [d]isen [s]ervo [c]lr [q]uit"
+            "<-/-> 1  [/] 10  ^ snap  ,/. step  "
+            "[e]ng [d]is [s]rv [c]lr [q]uit"
         )
         self._put(y, 0, " " * (cols - 1), curses.color_pair(C_HEAD))
         self._put(y, 1, keys[: cols - 2], curses.color_pair(C_HEAD))
