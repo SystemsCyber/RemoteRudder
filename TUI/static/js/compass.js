@@ -41,7 +41,10 @@
     const left_turn_message = document.getElementById("left_turn_message");
     
 
-    const socket = new WebSocket('ws://' + location.hostname + ':5000/ws');
+    const socket = new WebSocket(
+        (location.protocol === 'https:' ? 'wss://' : 'ws://') +
+        location.host + '/ws'
+    );
   
     socket.onopen = function () {
         console.log("WebSocket from compass.js connected.");
