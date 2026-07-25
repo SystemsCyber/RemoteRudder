@@ -105,11 +105,14 @@ class SourceHealth:
     last_rx: float = 0.0
     count: int = 0
     ever_seen: bool = False
+    last_data: bytes = b""   # most recent payload, for the DATA column
 
-    def mark(self, when: Optional[float] = None) -> None:
+    def mark(self, when: Optional[float] = None, data: Optional[bytes] = None) -> None:
         self.last_rx = when if when is not None else time.time()
         self.count += 1
         self.ever_seen = True
+        if data is not None:
+            self.last_data = bytes(data)
 
     def age(self, now: Optional[float] = None) -> float:
         if not self.ever_seen:
@@ -182,6 +185,13 @@ class SystemState:
         self.right_turn: bool = False
         self.heading_error: float = 0.0
 
+        # ---- heading source (COG-primary fusion) ------------------------
+        # heading_source is "COG", "COMPASS", or "NONE"; cog_lock is True only
+        # when COG is the active, trusted source. The autopilot uses cog_lock
+        # to decide whether to steer, hold, or center.
+        self.heading_source: str = "NONE"
+        self.cog_lock: bool = False
+
         # ---- filter diagnostics -----------------------------------------
         self.cog_accepted: int = 0
         self.cog_rejected: int = 0
@@ -189,6 +199,10 @@ class SystemState:
 
         # ---- source health ----------------------------------------------
         self.sources: Dict[int, SourceHealth] = {}
+        # J1939 NAMEs from address claims, keyed by source address (low byte
+        # of the CAN ID). Separate from `sources` because one source address
+        # sends several PGNs (several full CAN IDs) but has a single NAME.
+        self.claims: Dict[int, dict] = {}
 
         # ---- faults ------------------------------------------------------
         self.faults: Dict[str, Fault] = {}
@@ -229,13 +243,28 @@ class SystemState:
         with self._lock:
             self.sources[can_id] = SourceHealth(can_id, name, stale_after)
 
-    def mark_source(self, can_id: int, when: Optional[float] = None) -> None:
+    def mark_source(self, can_id: int, when: Optional[float] = None,
+                    data: Optional[bytes] = None) -> None:
         with self._lock:
             src = self.sources.get(can_id)
             if src is not None:
-                src.mark(when)
+                src.mark(when, data)
             self.rx_total += 1
             self.last_rx_any = when if when is not None else time.time()
+
+    def record_claim(self, source_addr: int, name_fields: dict) -> None:
+        """
+        Store a decoded J1939 NAME for a source address (from an address
+        claim). The source table joins on this by SA so every PGN from that
+        node shows the same manufacturer/function identity.
+        """
+        with self._lock:
+            self.claims[source_addr] = dict(name_fields)
+
+    def claim_for(self, can_id: int) -> Optional[dict]:
+        """The NAME fields for the source address of this CAN ID, if claimed."""
+        with self._lock:
+            return self.claims.get(can_id & 0xFF)
 
     # -- signals -----------------------------------------------------------
 
@@ -391,6 +420,8 @@ class SystemState:
                 "filter_ready": self.filter_ready,
                 "cog_accepted": self.cog_accepted,
                 "cog_rejected": self.cog_rejected,
+                "heading_source": self.heading_source,
+                "cog_lock": self.cog_lock,
                 # new: faults
                 "faults": [
                     {"code": f.code, "detail": f.detail, "count": f.count}
@@ -402,9 +433,16 @@ class SystemState:
                     {
                         "id": s.can_id,
                         "name": s.name,
+                        "data": s.last_data.hex().upper() if s.last_data else "",
                         "age": None if s.age(now) == float("inf") else round(s.age(now), 2),
                         "status": s.status(now),
                         "count": s.count,
+                        # J1939 identity joined by source address (low byte).
+                        # Empty until an address claim arrives (or is requested).
+                        "manufacturer": self.claims.get(s.can_id & 0xFF, {}).get("manufacturer", ""),
+                        "function": self.claims.get(s.can_id & 0xFF, {}).get("function", ""),
+                        "vehicle_system": self.claims.get(s.can_id & 0xFF, {}).get("vehicle_system", ""),
+                        "identity": self.claims.get(s.can_id & 0xFF, {}).get("identity", ""),
                     }
                     for s in self.sources.values()
                 ],

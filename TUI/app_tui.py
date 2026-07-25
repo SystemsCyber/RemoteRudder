@@ -53,6 +53,13 @@ import tornado.websocket
 from can_interface import CANinterface
 from autopilot import Autopilot
 from hmi_bridge import Bridge
+from j1939_name import (
+    REQUEST_ADDRESS_CLAIM_DATA,
+    build_request_for_address_claim,
+    decode_name,
+    is_address_claim,
+    source_address,
+)
 from hmi_canlink import CANLink
 from hmi_heading import HeadingMonitor
 from hmi_state import SystemState
@@ -64,10 +71,12 @@ from hmi_state import SystemState
 
 logger = logging.getLogger("hmi")
 
-# Degrees of rudder-shaft travel per manual step (. and , keys). "A couple
-# degrees" per the operator: enough to feel on the water, small enough to
-# creep the boat rather than throw it. Manual steps are disengaged-only.
-MANUAL_STEP_DEGREES = 2.0
+# Encoder counts per manual step (. and , keys). The steering module's shaft
+# goal is in raw encoder counts, not degrees -- the "counts" label the operator
+# uses for the encoder result. Center is ~1425 counts; a full sweep spans a few
+# hundred counts, so 10 counts is a usable nudge. Manual steps are
+# disengaged-only.
+MANUAL_STEP_COUNTS = 10
 
 
 def setup_logging(use_tui: bool, level: str = "INFO") -> None:
@@ -247,6 +256,30 @@ class HMIApp:
                 self.set_goal(float(hv), source)
             return
 
+        if command == "request_addresses":
+            # Broadcast a J1939 Request (PGN 59904) for the Address Claimed PGN
+            # (60928). Every node re-announces its NAME, which populates the
+            # manufacturer/function columns in the source table -- some nodes
+            # (the Garmin heading source among them) do not claim on their own
+            # often, so this is the way to identify them.
+            if ci is None:
+                st.log_event("WARN", "request_addresses ignored, CAN not ready")
+                return
+            try:
+                import can as _can
+                req = _can.Message(
+                    arbitration_id=build_request_for_address_claim(),
+                    data=REQUEST_ADDRESS_CLAIM_DATA,
+                    is_extended_id=True,
+                )
+                ci.bus.send(req)
+                st.log_event("CMD", f"requested address claims <- {source}")
+                if self.tui:
+                    self.tui.flash("requested address claims", 2.5)
+            except Exception as e:  # noqa: BLE001
+                st.log_event("WARN", f"address request failed: {e}")
+            return
+
         if ap is None or ci is None:
             st.log_event("WARN", f"command '{command}' ignored, CAN not ready")
             return
@@ -270,9 +303,9 @@ class HMIApp:
                 if not st.servo_enabled:
                     ci.set_servo_enabled(True)
                     st.servo_enabled = True
-                step = MANUAL_STEP_DEGREES if command == "manual_step_right" else -MANUAL_STEP_DEGREES
+                step = MANUAL_STEP_COUNTS if command == "manual_step_right" else -MANUAL_STEP_COUNTS
                 ci.adjust_shaft_goal(step)
-                st.log_event("CMD", f"manual step {'R' if step > 0 else 'L'} {abs(step)}deg <- {source}")
+                st.log_event("CMD", f"manual step {'R' if step > 0 else 'L'} {abs(step)} counts <- {source}")
         elif command == "heading_left":
             self.adjust_goal(-1, source)
         elif command == "heading_right":
@@ -475,7 +508,37 @@ class HMIApp:
                 # would make every source read as instantly stale and blank
                 # the whole display in offline demo mode. Wall clock is the
                 # right basis for "how long since I last heard from this node".
-                self.state.mark_source(msg.arbitration_id, time.time())
+                self.state.mark_source(msg.arbitration_id, time.time(), msg.data)
+
+                # J1939 address claims (PGN 60928) carry the node's NAME:
+                # manufacturer, function, identity. Decode and store by source
+                # address so the source table can show who each node is. This
+                # is also what the "request addresses" command populates.
+                if is_address_claim(msg.arbitration_id):
+                    name = decode_name(msg.data)
+                    if name is not None:
+                        sa = source_address(msg.arbitration_id)
+                        self.state.record_claim(sa, {
+                            "manufacturer": name.manufacturer,
+                            "mfg_code": name.mfg_code,
+                            "function": name.function_name,
+                            "function_code": name.function,
+                            "vehicle_system": name.vehicle_system_name,
+                            "identity": name.identity,
+                            "industry": name.industry_name,
+                        })
+                        self.state.log_event(
+                            "CLAIM",
+                            f"SA {sa:02X}: {name.manufacturer} / {name.function_name}",
+                        )
+                        # Update NAME-bound heading source addresses. This is
+                        # what lets a heading source keep working after an
+                        # address change: the registry re-resolves its address
+                        # from every claim.
+                        if self.bridge is not None:
+                            self.bridge.heading_registry.note_claim(
+                                sa, name.mfg_code, name.function, name.identity
+                            )
 
                 if msg.arbitration_id in self.can.watch_ids:
                     self.can.watch_ids[msg.arbitration_id]["last_time"] = time.time()
@@ -519,6 +582,7 @@ class HMIApp:
             try:
                 if self.link is not None:
                     self.link.poll_health()
+                self.bridge.step_ekf()
                 self.bridge.derive_fused()
                 self.monitor.update_state()
                 if self.autopilot is not None:

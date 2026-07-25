@@ -38,6 +38,7 @@ class CANinterface:
             sys.exit()
 
         self.listeners = []
+        self.raw_listeners = []  # called with the raw Message (for recording)
         self.shaft_goal = 1475  # Start in middle degrees
         self.servo_enabled = False  # track state
 
@@ -109,9 +110,17 @@ class CANinterface:
     def add_listener(self, callback):
         self.listeners.append(callback)
 
-    def adjust_shaft_goal(self, delta_degrees):
+    def add_raw_listener(self, callback):
+        """Register a callback that receives the raw CAN Message (for the
+        filtered log recorder). Kept separate from decoded listeners so the
+        recorder sees every used frame, including address claims that
+        process_message does not decode."""
+        self.raw_listeners.append(callback)
+
+    def adjust_shaft_goal(self, delta_counts):
+        # shaft_goal is in raw encoder counts, not degrees.
         if self.servo_enabled:
-            self.shaft_goal += delta_degrees
+            self.shaft_goal += delta_counts
             self.send_shaft_goal()  
     
     def set_servo_enabled(self, enable):
@@ -158,6 +167,12 @@ class CANinterface:
 
         while True:
             msg = await reader.get_message()
+            # Raw recording hook: every used frame, before decode.
+            for cb in self.raw_listeners:
+                try:
+                    cb(msg)
+                except Exception:
+                    logger.exception("raw listener failed")
             if msg.arbitration_id in self.watch_ids:
                 self.watch_ids[msg.arbitration_id]["last_time"] = time.time()
 
@@ -261,8 +276,18 @@ class CANinterface:
             else:
                 return None  # Skip processing if too soon
         
-        elif msg.arbitration_id == 0x09F112F8:  # Vessel Heading, PGN 127250 100ms update
-            heading_raw = struct.unpack('<H', msg.data[1:3])[0] * 0.0001 * (180 / 3.14159)  # radians to degrees
+        elif ((msg.arbitration_id >> 8) & 0x3FFFF) == 0x1F112:  # Vessel Heading, PGN 127250, ANY source
+            # Multiple devices send heading now (wall compass 0xF8, GPS 24xd
+            # 0x19). Match by PGN, not a fixed arbitration ID, and tag the
+            # decoded value with its source address so the bridge can apply
+            # NAME-bound source priority. See heading_sources.py.
+            sa = msg.arbitration_id & 0xFF
+            raw_field = struct.unpack('<H', msg.data[1:3])[0]
+            # 0xFFFF / 0xFFFE are the NMEA "data not available" sentinels an
+            # uncalibrated source sends; scaling them gives a bogus ~375 deg.
+            if raw_field >= 0xFFFE:
+                return None
+            heading_raw = raw_field * 0.0001 * (180 / 3.14159)  # radians to degrees
             self.compass_offset = heading_raw - self.COG
             if self.compass_offset < -180:
                 self.compass_offset += 360
@@ -270,8 +295,11 @@ class CANinterface:
                 self.compass_offset -= 360
             self.compass_heading = heading_raw + self.heading_correction
             if self.boat_speed < 1:
-                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {self.compass_heading:.2f}")
-                return {"compass_heading": self.compass_heading}
+                logger.debug(f"{msg.arbitration_id:08X} SA={sa:02X} {msg.data.hex()} heading: {self.compass_heading:.2f}")
+                # heading_sa lets the bridge route per-source; compass_heading
+                # kept for backward compatibility with existing consumers.
+                return {"compass_heading": self.compass_heading, "heading_sa": sa,
+                        "heading_value": self.compass_heading}
 
         elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
             engaged = bool(msg.data[0] & 0x01)
@@ -294,6 +322,49 @@ class CANinterface:
                 "heading_error": heading_error,
                 "rudder_goal": rudder_goal,
             }
-        
+
+        elif msg.arbitration_id == 0x18FF80E1:  # Heading node: fused heading, 10 Hz
+            # See sensor_node/PROTOCOL.md. All little-endian, offset-encoded.
+            node_heading = struct.unpack_from("<H", msg.data, 0)[0] / 100.0
+            node_sigma = struct.unpack_from("<H", msg.data, 2)[0] / 100.0
+            node_yaw = (struct.unpack_from("<H", msg.data, 4)[0] - 32768) / 100.0
+            node_src = msg.data[6]
+            status = msg.data[7]
+            valid = bool(status & 0x01)
+            logger.debug(
+                f"{msg.arbitration_id:08X} node heading {node_heading:.1f} "
+                f"sigma {node_sigma:.1f} yaw {node_yaw:.1f} src {node_src} valid {valid}"
+            )
+            return {
+                "node_heading": node_heading if valid else None,
+                "node_heading_sigma": node_sigma,
+                "node_yaw_rate": node_yaw,
+                "node_heading_source": node_src,
+                "node_heading_valid": valid,
+                "node_mag_cal_ok": bool(status & 0x02),
+                "node_gps_ok": bool(status & 0x04),
+                "node_holding": bool(status & 0x08),
+            }
+
+        elif msg.arbitration_id == 0x18FF81E1:  # Heading node: attitude, 10 Hz
+            node_pitch = (struct.unpack_from("<H", msg.data, 0)[0] - 18000) / 100.0
+            node_roll = (struct.unpack_from("<H", msg.data, 2)[0] - 18000) / 100.0
+            accel_mag = struct.unpack_from("<H", msg.data, 4)[0] / 1000.0
+            valid = bool(msg.data[7] & 0x01)
+            return {
+                "node_pitch": node_pitch if valid else None,
+                "node_roll": node_roll if valid else None,
+                "node_accel_mag": accel_mag,
+            }
+
+        elif msg.arbitration_id == 0x18FF82E1:  # Heading node: health, 1 Hz
+            return {
+                "node_fix_type": msg.data[0],
+                "node_num_sats": msg.data[1],
+                "node_hdop": struct.unpack_from("<H", msg.data, 2)[0] / 100.0,
+                "node_mag_cal": msg.data[4],
+                "node_temp_c": struct.unpack_from("<b", msg.data, 5)[0],
+            }
+
         else:
             return None

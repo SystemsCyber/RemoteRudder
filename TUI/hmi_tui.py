@@ -168,6 +168,8 @@ class TUI:
         elif ch in (ord("c"), ord("C")):
             self.on_command("clear_faults")
             self.flash("faults cleared")
+        elif ch in (ord("a"), ord("A")):
+            self.on_command("request_addresses")
         elif ch in (ord("q"), ord("Q")):
             self.on_command("quit")
         elif ch == curses.KEY_RESIZE:
@@ -256,8 +258,21 @@ class TUI:
             self._draw_rudder_panel(2, 39, cols - 39)
 
         src_top = 11
+        # If the EKF is producing output, show a one-line EKF strip between the
+        # top panels and the sources table. Keeps the operator's requested EKF
+        # inputs/diagnostics/outputs visible without a whole extra panel.
+        if self.state.signal_value("ekf_heading") is not None:
+            self._draw_ekf_strip(src_top, 0, cols)
+            src_top += 1
+        # Panel height must leave room below for faults, events, the button
+        # bar, and the footer (4 rows minimum). On a short 24-row terminal that
+        # caps the table shorter than on a tall one. The panel draw uses the
+        # same cap so the two never disagree (which previously let the table
+        # overwrite the faults line).
+        max_src_rows = max(3, (rows - 4) - src_top - 3)
+        src_h = min(3 + len(st.sources), 3 + max_src_rows, 12)
+        self._src_h = src_h  # the panel reads this so both agree
         self._draw_sources_panel(src_top, 0, cols, now)
-        src_h = min(3 + len(st.sources), 9)
         log_top = src_top + src_h
         self._draw_faults(log_top, cols)
 
@@ -471,33 +486,112 @@ class TUI:
             curses.color_pair(C_DIM),
         )
 
+    def _draw_ekf_strip(self, y: int, x: int, cols: int) -> None:
+        """
+        One-line EKF summary: inputs, outputs, and diagnostics. Shows the
+        operator what the filter is doing -- its heading/yaw-rate output, its
+        confidence (sigma), the learned bias (3-state), which inputs it has,
+        and how many yaw-rate rejects it has made.
+        """
+        st = self.state
+        h = st.signal_value("ekf_heading")
+        rate = st.signal_value("ekf_yaw_rate")
+        sigma = st.signal_value("ekf_sigma")
+        bias = st.signal_value("ekf_yaw_bias")
+        states = st.signal_value("ekf_states")
+        rejects = st.signal_value("ekf_rejects")
+
+        # inputs present
+        has_comp = st.signal_value("compass_heading") is not None
+        has_cog = st.signal_value("cog") is not None
+        has_gyro = st.signal_value("node_yaw_rate") is not None
+
+        parts = ["EKF"]
+        parts.append(f"H {h:6.1f}" if h is not None else "H   ---")
+        parts.append(f"rate {rate:+5.1f}/s" if rate is not None else "rate  ---")
+        if sigma is not None:
+            parts.append(f"sig {sigma:4.1f}")
+        if bias is not None:
+            parts.append(f"bias {bias:+4.1f}")
+        parts.append(f"[{states or '?'}st]")
+        # input indicators
+        inp = ("C" if has_comp else "-") + ("G" if has_cog else "-") + ("Y" if has_gyro else "-")
+        parts.append(f"in:{inp}")
+        if rejects:
+            parts.append(f"rej {rejects}")
+
+        line = "  ".join(parts)
+        # color sigma-driven: green if confident, warn/err as it rises
+        attr = (curses.color_pair(C_OK) if (sigma is not None and sigma < 6)
+                else curses.color_pair(C_WARN) if (sigma is not None and sigma < 15)
+                else curses.color_pair(C_DIM))
+        self._put(y, x + 1, line[: cols - 2], attr)
+
     def _draw_sources_panel(self, y: int, x: int, w: int, now: float) -> None:
         st = self.state
         with st._lock:
             srcs = list(st.sources.values())
-        h = min(3 + len(srcs), 9)
+            claims = dict(st.claims)
+        h = getattr(self, "_src_h", min(3 + len(srcs), 12))
         self._box(y, x, h, w, "CAN SOURCES")
 
+        # Full 8-column J1939 table when there is room (~138+ cols); otherwise
+        # the compact view for an 80-col terminal.
+        wide = w >= 136
         row = y + 1
-        self._put(row, x + 2, "ID          NAME                AGE     STATUS      COUNT",
-                  curses.color_pair(C_DIM))
-        row += 1
-        for s in srcs:
-            if row >= y + h - 1:
-                break
-            age = s.age(now)
-            status = s.status(now)
-            attr = (
-                curses.color_pair(C_OK) if status == "OK"
-                else curses.color_pair(C_ERR) | curses.A_BOLD
-            )
-            age_txt = "  never" if age == float("inf") else f"{age:6.2f}s"
-            self._put(row, x + 2, f"0x{s.can_id:08X}", curses.color_pair(C_DIM))
-            self._put(row, x + 14, s.name[:18].ljust(18))
-            self._put(row, x + 34, age_txt, attr)
-            self._put(row, x + 43, status.ljust(10), attr)
-            self._put(row, x + 55, str(s.count), curses.color_pair(C_DIM))
+        if wide:
+            hdr = (f"{'ID':<10} {'DATA':<16} {'NAME':<16} {'AGE':>7} "
+                   f"{'CNT':>5} {'CLASS':<12} {'FUNCTION':<14} {'MFG':<12} {'IDENT':>8}")
+            self._put(row, x + 2, hdr, curses.color_pair(C_DIM))
             row += 1
+            for s in srcs:
+                if row >= y + h - 1:
+                    break
+                age = s.age(now)
+                status = s.status(now)
+                attr = (curses.color_pair(C_OK) if status == "OK"
+                        else curses.color_pair(C_ERR) | curses.A_BOLD)
+                cl = claims.get(s.can_id & 0xFF, {})
+                # Show the status word, not just color: color alone is invisible
+                # to a color-blind operator and does not show up in a text
+                # capture. A trailing marker keeps STALE/NEVER legible.
+                if status == "OK":
+                    age_txt = " never" if age == float("inf") else f"{age:6.2f}s"
+                else:
+                    age_txt = status  # STALE or NEVER
+                data_txt = (s.last_data.hex().upper()[:16]) if s.last_data else ""
+                line = (
+                    f"{s.can_id:08X}  "
+                    f"{data_txt:<16} "
+                    f"{s.name[:16]:<16} "
+                    f"{age_txt:>7} "
+                    f"{s.count:>5} "
+                    f"{str(cl.get('vehicle_system',''))[:12]:<12} "
+                    f"{str(cl.get('function',''))[:14]:<14} "
+                    f"{str(cl.get('manufacturer',''))[:12]:<12} "
+                    f"{str(cl.get('identity','')):>8}"
+                )
+                self._put(row, x + 2, line[: w - 4], attr)
+                row += 1
+        else:
+            self._put(row, x + 2,
+                      "ID          NAME                AGE     STATUS      COUNT",
+                      curses.color_pair(C_DIM))
+            row += 1
+            for s in srcs:
+                if row >= y + h - 1:
+                    break
+                age = s.age(now)
+                status = s.status(now)
+                attr = (curses.color_pair(C_OK) if status == "OK"
+                        else curses.color_pair(C_ERR) | curses.A_BOLD)
+                age_txt = "  never" if age == float("inf") else f"{age:6.2f}s"
+                self._put(row, x + 2, f"0x{s.can_id:08X}", curses.color_pair(C_DIM))
+                self._put(row, x + 14, s.name[:18].ljust(18))
+                self._put(row, x + 34, age_txt, attr)
+                self._put(row, x + 43, status.ljust(10), attr)
+                self._put(row, x + 55, str(s.count), curses.color_pair(C_DIM))
+                row += 1
 
     def _draw_faults(self, y: int, cols: int) -> None:
         st = self.state
@@ -558,6 +652,7 @@ class TUI:
             ("ENGAGE" if not engaged else "  ON  ", "autopilot_enable", can_engage),
             ("DISENG", "autopilot_disable", engaged),
             ("SERVO", "servo_toggle", True),
+            ("REQ ADDR", "request_addresses", True),
             ("CLR FLT", "clear_faults", True),
             (" QUIT ", "quit", True),
         ]
@@ -565,13 +660,20 @@ class TUI:
         x = 1
         for label, cmd, enabled in specs:
             text = f" {label} "
-            if enabled:
-                attr = curses.color_pair(C_HEAD) | curses.A_REVERSE | curses.A_BOLD
-            else:
-                attr = curses.color_pair(C_DIM) | curses.A_DIM
             if x + len(text) >= cols - 1:
                 break
-            self._put(y, x, text, attr)
+            # color_pair requires an initialized screen. Guard it so button
+            # geometry can be computed in tests without a live curses context;
+            # the geometry (positions, enabled flags) is what matters for
+            # touch dispatch, and it must not depend on drawing succeeding.
+            try:
+                if enabled:
+                    attr = curses.color_pair(C_HEAD) | curses.A_REVERSE | curses.A_BOLD
+                else:
+                    attr = curses.color_pair(C_DIM) | curses.A_DIM
+                self._put(y, x, text, attr)
+            except curses.error:
+                pass
             # Record the touch target even when disabled, so a tap gives
             # feedback ("engage blocked") rather than doing nothing silently.
             self._buttons.append((y, x, x + len(text), cmd, enabled))

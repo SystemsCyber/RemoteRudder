@@ -3,7 +3,7 @@ Tests for manual steering, engage gating, and the remapped keys.
 
 Covers the operator-requested changes:
   * Up arrow snaps the goal to current heading (was Home + Fn)
-  * . and , step the motor a couple degrees, disengaged-only
+  * . and , step the motor in encoder counts, disengaged-only
   * engage requires a COG lock and always seeds the goal at current heading
   * COG loss mid-run holds the last rudder and stays engaged
 
@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app_tui import MANUAL_STEP_DEGREES, HMIApp
+from app_tui import MANUAL_STEP_COUNTS, HMIApp
 from hmi_state import SystemState
 
 
@@ -45,12 +45,12 @@ class TestManualSteering:
     def test_step_right_when_disengaged(self, app):
         app.state.autopilot_engaged = False
         app.handle_command("manual_step_right", "tui")
-        app.can.adjust_shaft_goal.assert_called_once_with(MANUAL_STEP_DEGREES)
+        app.can.adjust_shaft_goal.assert_called_once_with(MANUAL_STEP_COUNTS)
 
     def test_step_left_when_disengaged(self, app):
         app.state.autopilot_engaged = False
         app.handle_command("manual_step_left", "tui")
-        app.can.adjust_shaft_goal.assert_called_once_with(-MANUAL_STEP_DEGREES)
+        app.can.adjust_shaft_goal.assert_called_once_with(-MANUAL_STEP_COUNTS)
 
     def test_step_auto_enables_servo(self, app):
         """A step is useless if the servo is off; enable it so the motor moves."""
@@ -68,9 +68,9 @@ class TestManualSteering:
         app.handle_command("manual_step_left", "tui")
         app.can.adjust_shaft_goal.assert_not_called()
 
-    def test_step_is_a_couple_degrees(self):
-        """'A couple degrees' -- small enough to creep, not throw the boat."""
-        assert 1.0 <= MANUAL_STEP_DEGREES <= 3.0
+    def test_step_is_ten_counts(self):
+        """Encoder counts, increment of 10 -- the operator's requested unit."""
+        assert MANUAL_STEP_COUNTS == 10
 
     def test_repeated_steps_accumulate(self, app):
         app.state.autopilot_engaged = False

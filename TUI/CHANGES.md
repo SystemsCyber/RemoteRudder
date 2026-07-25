@@ -337,3 +337,406 @@ fixtures: `planing_2026.log` (13-25 mph, 0% below COG threshold) and
 Could not reproduce a 500 on any route, online or offline; every route returned
 200. The OSM tile URL in plot_data.html fails offline, but that is a
 client-side tile fetch, not a server 500. Left for a captured traceback.
+
+---
+
+# Round 4: address claims, source identity, two-heading diagnosis
+
+Triggered by the stationary-south logs: the compass appeared to bounce
+179 -> 30 deg while the boat sat still, and the source table showed no compass
+at all.
+
+## The diagnosis (not what it looked like)
+
+The two stationary logs cleared the Garmin compass. Source 0xF8
+(PGN 127250, vessel heading) reads a rock-steady ~170 deg -- south -- across
+both captures. It does not bounce.
+
+The apparent bounce was fused_heading switching sources. Two heading-ish
+sources disagree:
+  - 0xF8 (Garmin compass): steady 170 deg, correct
+  - 0x1C (Garmin GPS vehicle-direction, PGN 65256): a STALE ~60 deg course,
+    because a stationary GPS reports garbage course-over-ground
+
+With COG-primary fusion and the boat stopped, the display could flip between
+them. What looked like a failing compass was the fusion hopping sources -- which
+is exactly the transparency the source-table work now provides.
+
+## 15. J1939 address-claim decoding -- j1939_name.py (new)
+
+Decodes PGN 60928 (Address Claimed) NAMEs: manufacturer, function, vehicle
+system, identity. Validated against the real claim in the logs: SA 0x1C is
+manufacturer 114 (Garmin), industry 4 (Marine), identity 328706. Ships a
+built-in marine manufacturer lookup (Garmin, Airmar, Simrad, Raymarine,
+Maretron, Furuno, Lowrance, B&G, Victron, ...).
+
+## 16. Expanded source table -- hmi_state.py, hmi_tui.py
+
+The source table gains the requested columns: ID, DATA (last payload), NAME,
+AGE, COUNT, CLASS (vehicle system), FUNCTION, MANUFACTURER, IDENTITY. The last
+four come from address claims, joined to each source by its J1939 source
+address (low byte), so every PGN from a node shows that node's identity.
+
+Rendered as a full-width table at >=136 cols; falls back to the compact
+6-column view below that. STALE/NEVER show as text in both views (not just
+color -- caught by a test, and better for a color-blind operator anyway).
+
+The panel height now scales with terminal rows so it never overwrites the
+faults/events lines below it.
+
+## 17. Request-address-claim command -- app_tui.py, hmi_tui.py
+
+New command `request_addresses`: broadcasts a J1939 Request (PGN 59904) for the
+Address Claimed PGN, to the global address 0xFF. Every node re-announces its
+NAME. Wired to a REQ ADDR touch button and the `a` key.
+
+This matters because some nodes -- the compass on 0xF8 among them -- do not
+send claims on their own in a short window. The request pulls their identity on
+demand. Until you press it, unclaimed sources show blank identity columns
+rather than wrong ones.
+
+## 18. Source renames -- hmi_bridge.py
+
+`vessel_heading` -> `compass_F8` and `vehicle_dir` -> `gps_vehicle_dir`, so the
+two heading sources are obviously distinct in the table. This is a decode-label
+change only; the CAN IDs are unchanged.
+
+## Tests
+
+New: `test_address_claims.py` (23) -- NAME decode against the real claim, the
+request-frame structure, source-table identity joins, and the two-heading
+distinction. New fixture `stationary_south.log` preserves the real address
+claims and both heading sources. Total 484 passing.
+
+## Data note
+
+The compass (0xF8) and non-Garmin nodes only claim on request, so the identity
+columns populate fully only after REQ ADDR. The 8-column table needs >=136
+cols; narrower terminals get the compact view.
+
+---
+
+# Round 5: GPS 24xd, NAME-bound heading sources, calibration TUI
+
+You installed a Garmin GPS 24xd (heading + attitude + GPS in one unit) and
+captured a log with all devices claiming. This round wires it in by NAME.
+
+## Device roster (from the 2026-07-25 08:45 address claims)
+
+| SA | Device | Identity | Transmits |
+|----|--------|----------|-----------|
+| 0x19 | GPS 24xd (new) | Garmin, Attitude/Compass, 1602535 | heading, attitude, mag-var, position, COG/SOG |
+| 0x1C | Zero-Off GPS | Garmin, 328706 | position, COG/SOG, vehicle-dir |
+| 0xF8 | Wall 3-axis compass | Garmin, Heading Sensor, 1039212 | heading only |
+| 0x9B | Airmar | Navigation, 1026669 | GNSS |
+| 0x00 | Garmin (industrial) | 666824 | -- |
+
+## 19. The 375-degree heading bug -- can_interface.py
+
+The uncalibrated 24xd sends the NMEA 2000 "data not available" sentinel
+(0xFFFE) for heading. The decoder scaled it to a bogus 375.5 deg, which
+poisoned the fused heading and drove the HEADING_NOISE / sig 61 faults in the
+08:46 TUI screenshot. Now 0xFFFE and 0xFFFF are rejected.
+
+## 20. Multi-source heading decode -- can_interface.py
+
+Heading (PGN 127250) now arrives from two devices: the wall compass (0xF8) and
+the 24xd (0x19), on different arbitration IDs. The decoder matches by PGN, not
+a fixed ID, and tags each heading with its source address so the bridge can
+apply source priority.
+
+## 21. NAME-bound heading source registry -- heading_sources.py (new)
+
+Heading sources are bound by stable J1939 NAME identity, not address, so they
+keep working after any address change (arbitration on power-up, device swap).
+Each source has a priority and an enabled flag. derive_fused consumes the
+registry's choice:
+
+  priority 1: GPS 24xd   (enabled=False until calibrated)
+  priority 2: Wall compass (enabled=True)
+  [priority 3: Heading node, commented out until that board is on the bus]
+
+To change which source wins or turn one off: edit DEFAULT_PROFILES in
+heading_sources.py, or call registry.set_enabled/set_priority at runtime. This
+is the single place source selection lives. A stale primary falls back to the
+next enabled source, then to COG, then to center-and-wait.
+
+Fusion priority is now: heading node -> registry heading source (24xd/wall) ->
+COG when moving -> compass bridge -> none.
+
+## 22. Compass calibration TUI -- calibrate_compass_tui.py (new)
+
+A standalone on-water tool that guides the 24xd basic calibration (the
+no-chartplotter procedure from its manual: two slow circles, then straight-line
+alignment at >= 4 mph) and confirms success by watching the heading come alive.
+It finds the 24xd by NAME, shows live heading/speed/fix, walks the phases
+(WAITING -> HEADING -> CIRCLING -> ALIGNING -> DONE), and on completion offers
+to enable the 24xd in the registry so the main HMI picks it up. Runs live
+(--channel can0) or against a log (--replay) for a dry run.
+
+## 23. Manual step is encoder counts, not degrees -- app_tui.py
+
+The steering module's shaft goal is in raw encoder counts (the screenshots show
+goal 1475 = center, rudder 549/348 etc). Manual steps were labeled degrees and
+sized 2; changed to MANUAL_STEP_COUNTS = 10, per the operator's request for
+increments of 10 counts.
+
+## Tests
+
+New: test_heading_sources.py (17) -- NAME binding, address-change tracking,
+priority/enable selection, sentinel rejection, and the multi-source fusion
+hand-off (wall compass -> 24xd when enabled -> fallback when stale). Caught a
+mutable-default-state bug in the registry (shared profile objects across
+instances) before it shipped. Total 501 passing.
+
+## Calibration workflow
+
+1. On the water, run: python3 calibrate_compass_tui.py --channel can0
+2. Follow the on-screen steps (circles, then straight line at >= 4 mph).
+3. When it reads DONE, press E to enable the 24xd.
+4. Restart the HMI -- the 24xd is now the primary heading source, and works
+   at any speed including at rest.
+
+---
+
+# Round 6: COG-primary fishing mode, yaw-rate limiting, stable fallback
+
+Three requirements for fishing in wind/waves while holding a straight track.
+
+## The COG-vs-heading distinction (why this matters)
+
+Magnetic heading and course-over-ground are different things. In a crosswind or
+current the boat crabs -- it POINTS one way (heading) but TRAVELS another (COG).
+For fishing, the lines must trail straight off the transom, which means holding
+a straight TRACK -- COG -- not heading. Holding magnetic heading in a crosswind
+would let the boat drift sideways off its track.
+
+## 24. COG-primary at fishing speed -- hmi_bridge.py
+
+New threshold COG_PRIMARY_SPEED_MPH = 3.0. At and above it, COG is the primary
+heading, above magnetic sources -- the boat holds its track. Below it (but above
+COG_MIN 1.6), magnetic heading is primary because low-speed COG is GPS noise.
+Below COG_MIN, nothing (center and wait). Three clear bands.
+
+To change the fishing behavior: adjust COG_PRIMARY_SPEED_MPH, or to always
+prefer magnetic, raise it above any cruising speed.
+
+## 25. Yaw-rate limiting -- heading_fusion.py (new)
+
+Every fused heading passes through a yaw-rate limiter. A candidate implying a
+turn faster than YAW_RATE_MAX_DPS = 45 deg/s is discarded, and the fusion HOLDS
+the last good heading rather than chasing the bad value.
+
+Measured basis (2026-07 logs): real turns top out at ~41 deg/s (wall compass,
+all logs); COG jitters to hundreds of deg/s even at planing speed (~12% of COG
+samples jump >45 deg/s). So 45 deg/s clips the impossible without touching real
+sharp turns.
+
+A deliberate source switch (compass -> COG handoff) is re-baselined, not
+rejected -- the limit guards jumps WITHIN a source, not intentional handoffs. A
+run of consecutive rejects also re-baselines, so the filter never wedges.
+
+## 26. Stable-near-last fallback -- heading_fusion.py
+
+When sources disagree, choose_stable_near_last() drops impossible jumps
+(yaw-rate gate), then among survivors prefers the one closest to the last
+accepted heading that is also steady (low scatter). A single glitching sensor
+cannot yank the controller off a good track. SourceStability tracks each
+source's recent scatter over a 2 s window.
+
+## Visualizations
+
+visualize_fusion.py generates two figures (in outputs):
+  * fusion_test_cases.png -- the fishing crosswind case (COG holds track while
+    the boat crabs), yaw-rate rejections marked, and the implied-yaw-rate panel
+    showing raw COG spiking to 100s of deg/s while fused stays under the limit
+  * fusion_sensor_disagreement.png -- three sources with one glitching for ~15 s;
+    the fused output stays on the stable sources throughout
+
+The synthetic signals are tuned to the measured real-log noise (wall-compass
+steadiness, COG spike rate) so the noise is realistic.
+
+## Tests
+
+New: test_heading_fusion.py (17) -- yaw-rate limiter (plausible turns accepted,
+impossible jumps rejected, wraparound, re-baseline), the COG-primary transition
+(magnetic below threshold, COG above), source-switch handoff, and stable
+fallback. Caught and drove the fix for the source-switch-vs-glitch distinction.
+Total 518 passing.
+
+## The predicted 24xd behavior
+
+Once calibrated, the 24xd should send a clean magnetic heading (like the wall
+compass but better sited). The fusion treats it as a magnetic source: primary
+below fishing speed, yielding to COG above it. Its attitude output (127257)
+additionally feeds the sea-state-vs-sensor noise attribution. If its heading
+proves noisy after calibration, the yaw-rate limiter and stable fallback
+protect the controller regardless.
+
+---
+
+# Round 7: heading EKF using the compass derivative
+
+The operator's idea: a compass with a constant bias (declination, hard-iron,
+electrical) still has an accurate DERIVATIVE -- a real 10-degree yaw still moves
+the compass ~10 degrees. So the compass yaw RATE is a good filter input even
+when the compass heading is not.
+
+## The idea is right, with one caveat
+
+Confirmed. But not all compass error is constant bias:
+  * declination -> constant, differentiates away cleanly (idea works perfectly)
+  * hard-iron   -> becomes a heading-dependent error after the heading calc;
+                   small for small yaw steps
+  * soft-iron   -> SCALES the derivative (a real 10-deg turn reads 8 or 13 deg
+                   depending on heading) -- this is the one that bites
+  * electrical  -> transient spikes, not bias
+
+So the compass yaw rate is a good measurement AFTER soft-iron correction (the
+24xd calibration) and WITH transient spikes gated (the yaw-rate limiter from
+round 6). Both already exist.
+
+## 27. Heading EKF -- heading_ekf.py (new)
+
+Two variants:
+  HeadingEKF2  state = [heading, yaw_rate]
+  HeadingEKF3  state = [heading, yaw_rate, yaw_bias]
+
+Both fuse: compass heading (high noise -- its bias lives here), compass yaw rate
+(low noise -- the operator's insight), COG (unbiased track reference, gated on
+speed), and an optional independent gyro (node/24xd). Pure Python, no numpy in
+the runtime path.
+
+## 28. Which variant -- the comparison decided it
+
+compare_ekf.py runs both against a synthetic fishing scenario with realistic
+noise (compass +32-deg bias, 1.15x soft-iron scale, spikes; COG jitter). Result
+(RMS error vs true track):
+
+  priority chain: 2.53 deg
+  EKF 2-state:    2.33 deg   <- best with compass derivative only
+  EKF 3-state:    2.88 deg   <- WORSE without an independent gyro
+
+The 3-state's yaw-bias is UNOBSERVABLE with only a compass derivative, so the
+extra state just adds noise. But add an independent gyro (the 24xd attitude
+output, or the Teensy node) and the 3-state drops to 0.77 deg RMS -- best by far,
+because the gyro makes the bias observable.
+
+Decision, encoded in the bridge: use the 2-state unless a gyro (node_yaw_rate)
+is present, then the 3-state. The plot ekf_comparison.png shows all of this,
+including the yaw-rate tracking (panel 3) and the bias learning (panel 4).
+
+## 29. EKF runs alongside the priority chain -- hmi_bridge.py
+
+The EKF is a NEW source, not a replacement. step_ekf() advances it each health
+tick and publishes ekf_heading/ekf_yaw_rate/ekf_sigma. derive_fused prefers the
+EKF when use_ekf is on AND its sigma is low (< 15 deg); otherwise it falls
+straight through to the round-6 priority chain. So enabling the EKF cannot break
+the working fusion -- if it diverges, the chain takes over.
+
+OFF by default (use_ekf=False). Enable by setting bridge.use_ekf=True (a runtime
+toggle / TUI control can be added).
+
+## Tests
+
+New: test_heading_ekf.py (13) -- both variants track a known turn, the yaw rate
+stays accurate despite a heading bias (the core idea), the 3-state learns bias
+only with a gyro, the EKF is off by default, and it runs alongside the chain
+without breaking it. Total 531 passing.
+
+## Recommendation
+
+Run the 2-state now (compass derivative + COG). Once the 24xd is calibrated and
+its attitude yaw rate is decoded, switch to the 3-state -- that is when the
+operator's idea pays off most, because the gyro lets the filter learn and
+subtract the compass's residual scale error online.
+
+---
+
+# Round 8: COG-primary threshold to 4 mph, with hysteresis
+
+Operator note: the boat at idle often exceeds 3 mph, so a 3 mph transition
+threshold flips between magnetic and COG during normal low-speed operation. The
+magnetic source works fine at those speeds (proven in past use), so the handoff
+should happen higher and stickier.
+
+## 30. Threshold raised to 4 mph -- hmi_bridge.py
+
+COG_PRIMARY_SPEED_MPH: 3.0 -> 4.0. Above idle, so trolling/idle stays on the
+magnetic source and only hands off to COG once genuinely underway. Also matches
+the Garmin 24xd's own 4 mph heading-alignment threshold.
+
+## 31. Hysteresis dead-band -- hmi_bridge.py
+
+A single threshold still chatters when the boat hovers right at it. Added
+COG_PRIMARY_DROP_MPH = 3.0: COG-primary engages at 4 mph but does not drop back
+to magnetic until below 3 mph. The 1 mph dead-band means a boat wobbling near
+the threshold does not flip sources every time SOG crosses a line. Verified: an
+idle-wobble SOG sequence that would chatter on a single threshold produces at
+most one transition.
+
+State: bridge._cog_primary_active, set at 4 mph, cleared below 3 mph.
+
+## Tests
+
+Added TestCogPrimaryHysteresis (5) to test_heading_fusion.py: engage at the
+upper threshold, hold through the dead-band, drop below the lower threshold, no
+chatter at idle, and the threshold ordering. Total 536 passing.
+
+---
+
+# Round 9: on-water web graphs, filtered CAN log, TUI EKF display
+
+Three features for use on the water, where you can't upload a log to analyze.
+
+## 32. Filtered CAN log recorder -- can_recorder.py (new)
+
+Records ONLY the CAN frames the HMI decodes (steering, rudder, heading from any
+source, COG/SOG/position, engine, autopilot status, heading node) plus address
+claims (needed to rebuild the NAME registry on replay). On the real log this is
+~17% of the bus -- small enough to share, and exactly what the fusion sees.
+candump format, so the existing replay path reads it directly. Rotates at 20 MB.
+
+Wired into the CAN read loop via a new raw-message listener hook
+(can_interface.add_raw_listener), separate from decoded listeners so it also
+captures address claims that process_message does not decode.
+
+## 33. Web: live graphs + log download -- app.py, templates/plot_data.html
+
+The /plot page gains:
+  * EKF trace on the angles chart (compass/heading/COG/EKF/goal together)
+  * a sensor-disagreement chart (COG-compass, EKF-compass, EKF-COG deltas) --
+    see at a glance when sources diverge
+  * a rudder/steering chart (steering goal counts, rudder angle, heading error)
+  * an EKF yaw-rate + sigma chart
+  * a status bar: active source (COG/COMPASS), EKF sigma, and the filtered-log
+    path with a download link (/used-can-log)
+
+app.py now runs the heading EKF on its own CAN interface (speed-weighted COG
+noise, no hard threshold -- the EKF blends), folds EKF outputs + the active
+source + the log path into the telemetry snapshot, and serves the log for
+download. Also fixed the /sw.js route (the dot was unescaped, same bug as the
+TUI server had).
+
+## 34. TUI EKF strip -- hmi_tui.py
+
+A one-line EKF summary between the top panels and the sources table, shown when
+the EKF is producing output:
+
+  EKF  H  98.7  rate +5.4/s  sig 0.7  [2st]  in:CG-  rej 3
+
+Outputs (heading, yaw rate), diagnostics (sigma, state count, reject count),
+and inputs present (C=compass, G=COG, Y=gyro). Color tracks sigma confidence.
+
+## Tests
+
+New: test_can_recorder.py (8) -- the used-frame filter (keeps decoded IDs +
+heading-any-source + claims, drops the rest), candump round-trip, stats. Total
+544 passing.
+
+## Note on the EKF COG weighting
+
+app.py's EKF uses speed-weighted COG noise (R_cog = 400/sog_mph^2, floored),
+not a hard speed switch -- so it leans on the compass derivative at idle and
+smoothly into COG as you speed up. This is the threshold-free behavior discussed
+for the EKF path (the priority chain keeps its 4 mph hysteresis as the fallback).

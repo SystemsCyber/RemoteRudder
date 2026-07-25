@@ -1,174 +1,129 @@
-# HMI test suite
+# RemoteRudder HMI — heading fusion, EKF, and instrumentation
 
-386 tests, 97% coverage on the HMI modules. The full run takes about 70 seconds;
-the fast subset takes 1.4.
+This archive collects a multi-session engineering effort on the RemoteRudder
+boat-autopilot HMI: a Raspberry Pi + PEAK PCAN node on a V-drive ski/wakeboard
+boat (fixed prop, small rudder, steers only with forward way on), reading a
+J1939 / NMEA 2000 marine bus at 250 kbit/s.
 
-```bash
-python3 -m pytest                              # everything
-python3 -m pytest -m "not integration and not slow"   # 275 tests, 1.4s
-python3 -m pytest -m regression                # real-log golden checks
-python3 -m pytest --hardware -m hardware       # needs the PCAN plugged in
-python3 -m pytest --cov=hmi_state --cov=hmi_heading \
-                  --cov=hmi_bridge --cov=hmi_canlink \
-                  --cov=hmi_tui --cov-report=term-missing
-```
+It's organized so you can (a) drop the code into your repo and go, and (b) keep
+it as a record of how the work was done. If you're using this as a case study in
+working with AI, the `SESSION_HISTORY.md` file is the narrative; this README is
+the map.
+
+## What was built
+
+Starting from a working-but-basic autopilot HMI, the sessions added:
+
+- **A curses TUI** with touch buttons, an 8-column CAN source table, and live
+  diagnostics — usable on the boat's touchscreen.
+- **J1939 NAME binding** — sources identified by their stable device identity
+  (manufacturer/function/serial from the address-claim NAME), not their momentary
+  bus address, so a heading source keeps working after any address change.
+- **A GPS 24xd calibration tool** — a standalone on-water TUI that walks the
+  Garmin basic-calibration procedure and enables the 24xd as a heading source
+  when it completes.
+- **COG-primary "fishing mode"** — above a speed threshold (4 mph, with
+  hysteresis), the autopilot holds course *over ground* so the boat tracks
+  straight in a crosswind and lines trail off the transom, rather than holding
+  magnetic heading and drifting off track.
+- **Yaw-rate limiting** — heading changes faster than a physically plausible
+  turn (45°/s, measured from real logs) are discarded, so the controller never
+  chases GPS jitter or a glitching sensor.
+- **A heading EKF** — fuses the compass *derivative* (accurate even when the
+  compass heading is biased) with COG and an optional gyro. 2-state normally,
+  3-state once an independent gyro is available.
+- **On-water instrumentation** — live web graphs (heading sources, sensor
+  disagreement, rudder command, EKF state), and a filtered CAN recorder that
+  logs only the ~17% of bus traffic the HMI actually uses, downloadable from the
+  web page for later analysis.
+
+Every feature is covered by tests: **544 passing** (plus 10 hardware tests that
+skip without a real CAN interface).
 
 ## Layout
 
-| File | Tests | Covers |
-|---|---|---|
-| `test_state.py` | 51 | Signal freshness, goal normalization, fault latching, snapshot contract, thread safety |
-| `test_heading.py` | 57 | Circular statistics, noise attribution, engage interlock |
-| `test_decode.py` | 33 | `process_message` against real captured frames |
-| `test_canlink.py` | 36 | Bus lifecycle, platform resolution, staleness |
-| `test_bus_health.py` | 15 | Kernel error counters, bitrate-mismatch signature |
-| `test_error_paths.py` | 23 | Driver exceptions, the NOISY band, threshold boundaries |
-| `test_regression.py` | 26 | Full-log replay, physical plausibility, COG gating |
-| `test_integration.py` | 30 | Bridge mapping, live Tornado server, phone/TUI goal sync |
-| `test_web.py` | 49 | Routes, HTML structure, asset resolution, JS syntax, payload contract |
-| `test_tui.py` | 36 | Key handling, subprocess render |
-| `test_tui_render.py` | 31 | In-process render at 10 terminal sizes |
-| `test_hardware.py` | 10 | Real adapter (skipped unless `--hardware`) |
-
-Coverage: `hmi_state` 100%, `hmi_canlink` 99%, `hmi_heading` 99%, `hmi_bridge`
-99%, `hmi_tui` 94%.
-
-## Fixtures are real captures
-
-Frames are byte-for-byte from the logs in `logs/`, filtered to the eight
-decoded arbitration IDs to keep them at 439 KB. See `fixtures/README.md` for
-provenance.
-
-Synthetic frames only prove the decoder agrees with whoever wrote the test.
-These prove it agrees with the boat.
-
-The two main slices exercise opposite regimes:
-
 ```
-underway_fast.log   COG accepted 87, rejected  0    (0% rejection)
-trolling_slow.log   COG accepted  3, rejected 21   (88% rejection)
-```
+README.md                 <- you are here
+SESSION_HISTORY.md        <- the narrative: what was decided and why, round by round
+UPDATING_THE_REPO.md      <- how to get this into your git repo for sea trials
+CHANGES.md                <- the running changelog (rounds 1-9)
 
-`test_rejection_ratio_differs_between_regimes` asserts on the *difference*.
-Remove the speed gate and it fails — while every other test still passes,
-because each log alone would decode fine.
+code/                     <- all source modules
+  app.py                  <- original web server (now with EKF + graphs + recorder)
+  app_tui.py              <- curses TUI + Tornado server
+  can_interface.py        <- CAN decode + read loop
+  autopilot.py            <- steering control
+  hmi_state.py            <- thread-safe shared state
+  hmi_bridge.py           <- decode -> state, fusion (derive_fused), EKF stepping
+  hmi_heading.py          <- heading quality / engage gate
+  hmi_canlink.py          <- CAN backend + socketcan health
+  hmi_tui.py              <- the curses UI
+  heading_sources.py      <- NAME-bound source registry
+  heading_fusion.py       <- yaw-rate limiter, stable-near-last fallback
+  heading_ekf.py          <- 2-state and 3-state heading EKF
+  j1939_name.py           <- address-claim / NAME decoding
+  can_recorder.py         <- filtered CAN log recorder
+  calibrate_compass_tui.py<- on-water 24xd calibration helper
+  compare_ekf.py          <- EKF comparison plots
+  visualize_fusion.py     <- fusion test-case plots
+  templates/              <- web pages (autopilot.html, plot_data.html)
 
-Finding the slow window took some doing: `combined_filtered.log` runs at
-planing speed for its first ~100k frames, so slicing from the start gives a
-second copy of the fast regime. It is at frame 123500. `make_fixtures.py`
-scans for it rather than hardcoding an offset.
-
-`trolling_slow.log` also contains zero `0x18FF50E0` frames — a real-world
-missing-message case rather than a synthetic one.
-
-## Golden values are bounds, not exact numbers
-
-Pinning an exact float would make the suite fail on any legitimate improvement
-to the filter. Pinning a physical range — "pitch on flat water is within 15
-degrees of level", "position is near Horsetooth" — fails only when something
-is genuinely wrong.
-
-`test_golden_summary_underway` is one consolidated assertion over eleven
-fields; when it fails it names which one drifted.
-
-## Web interface tests
-
-`test_web.py` was written after a reported 500. `/sw.js` was routed with
-
-```python
-(r"/sw.js", StaticFileHandler, {"path": ..., "default_filename": "sw.js"})
+tests/                    <- 544 tests + real-capture fixtures
+docs/                     <- PCAN hotplug setup
+sensor_node/              <- Teensy heading-node sketch + CAN protocol
+figures/                  <- generated comparison/visualization plots
+round_packages/           <- the incremental delivery zips (rounds 3-9 + sensor node)
 ```
 
-The regex captures no groups, but `StaticFileHandler.get()` requires a `path`
-positional argument that comes from the capture. `default_filename` does not
-supply it — that option only applies to directory requests. Every request
-raised `TypeError` and returned 500, and since `plot_data.html` registers the
-service worker on load, it fired on every visit to `/plot` and silently
-disabled offline tile caching. The same bug is in the original `app.py`.
+## Running it
 
-Fixed to `r"/(sw\.js)"`. Three tests catch a revert.
+Dependencies (on the Pi or a dev box):
 
-A second bug surfaced while writing these: `compass.js` hardcoded
-`ws://host:5000/ws`, so running with `--port` anything else left the page
-connecting to nothing — no error banner, just a dashboard that never updated.
-Now derives from `location.port`, with `wss://` when the page is served over
-HTTPS. The web fixture deliberately runs on a random port so this stays caught.
+```bash
+pip install pytest pytest-cov pytest-randomly beautifulsoup4
+# matplotlib only needed to regenerate the figures:
+pip install matplotlib --break-system-packages
+```
 
-What the web tests check:
+Run the tests:
 
-- every route returns 200 with the right content type; unknown routes 404
-- every `src=`/`href=` the templates reference actually resolves (parametrized,
-  so a failure names the missing file)
-- HTML parses, script tags balance, no unrendered `{{ }}` template markers
-- every element ID `compass.js` calls `getElementById` on exists in the HTML
-  (14 of them; a renamed element gives a null reference and a dead widget with
-  no error unless the console is open)
-- JavaScript parses via `node --check`, including inline blocks
-- the WebSocket emits the keys the browser guards on, and never bare `NaN` or
-  `Infinity`, which `JSON.parse` rejects
-- directory traversal is blocked and odd requests return 4xx rather than 5xx
+```bash
+cd code
+python3 -m pytest -q         # 544 pass, 10 skip
+```
 
-Both fixes were mutation-tested: reverting each one turns the relevant tests
-red, so they are verifying behaviour rather than passing vacuously.
+Run the web server (with live graphs at /plot):
 
-## Two things the tests found
+```bash
+python3 app.py               # then open http://<pi>:5000/plot
+```
 
-**Footer truncation.** The keybinding hint was exactly 80 characters but only
-78 fit at an 80-column terminal, so `[q]uit` rendered as `[q]u`. Fixed, and
-`test_shows_keybindings` now asserts the full string.
+Run the TUI:
 
-**RPM never appears during fast replay.** The engine decoder throttles on wall
-clock (`GUI_TIMEOUT = 0.35 s`), but replay feeds 2,150 engine frames instantly,
-so zero decode. At realistic pacing all 2,150 decode fine (637 rpm idle). Not a
-code bug, but it means the RPM field looks dead in offline demos. The
-`wired.feed()` harness takes `defeat_rate_limits=True` to reproduce live
-behaviour, and `test_rpm_throttle_suppresses_under_instant_replay` pins the
-throttle so nobody removes it and floods every connected phone at 100 Hz.
+```bash
+python3 app_tui.py
+```
 
-## Two documented limitations
+Calibrate the 24xd on the water:
 
-**The sources panel truncates.** It is capped at 9 rows, leaving room for 6
-entries after the border and header. With 8 watched PGNs, the last two —
-currently `vessel_heading` and `autopilot_status` — are never drawn on a
-24-row terminal. That matters because `vessel_heading` is the compass source,
-so a compass going quiet is invisible in the panel. The FAULTS line still names
-it via the STALE fault. `test_sources_panel_truncates_at_24_rows` pins this;
-update it if the panel is ever made scrollable.
+```bash
+python3 calibrate_compass_tui.py --channel can0
+```
 
-**`SIGMA_ENGAGE_MAX = 6.0` blocks engagement on the real Horsetooth data**,
-where observed sigma runs 10–15 degrees. `test_engage_threshold_is_the_documented_value`
-pins the constant so raising it to get a demo working is a conscious edit
-rather than a silent one.
+## Where this is going
 
-## Notes on the harness
+Next up is more sensor nodes (the `sensor_node/` Teensy design is the first),
+which is exactly the case NAME binding and the source registry were built for —
+a new heading source drops in by adding one profile, and the EKF gains an
+independent gyro, which is when the 3-state filter earns its keep.
 
-**Isolation.** Every fixture is function-scoped. `SystemState` latches faults
-and holds an event deque, so a shared instance would make test order
-significant. Verified with `pytest-randomly` across multiple runs.
+The sea trials come first. `UPDATING_THE_REPO.md` covers getting this into git
+in a way that lets you correlate each on-water log with an exact code version.
 
-**Time.** A `fake_clock` fixture patches `time.time` in the modules that age
-things out, so staleness and window-expiry tests are deterministic rather than
-sleeping.
+## A note on running the tests from this archive
 
-**curses.** `test_tui_render.py` attaches curses to a pty inside the test
-process, which is what makes the drawing code visible to coverage (27% → 94%).
-`initscr()` reads `LINES`/`COLUMNS` from the environment before consulting the
-tty, so both are pinned in the fixture; without that the screen comes up at
-40×9 and every content assertion hits the "terminal too small" path.
-
-**Server tests** spawn a real Tornado process on an OS-assigned free port.
-Slower than calling handlers directly, but it is the only way to catch JSON
-that will not serialize, a handler that raises on malformed input, or a
-snapshot key the browser depends on quietly disappearing.
-
-## Adding tests when the Kalman filter lands
-
-The seam already exists. `hmi_bridge` routes `fused_heading`, `heading_sigma`,
-and `yaw_rate`, and `test_filter_surface_accepts_injected_values` proves it
-works before the filter is written. When the filter is wired in:
-
-1. Replace `derive_fused()` with the filter output — no other HMI changes.
-2. Add golden checks on filter convergence against `trolling_slow.log`, where
-   COG rejection actually matters.
-3. Consider gating engagement on the filter's post-fit residual instead of raw
-   compass scatter, which would let `SIGMA_ENGAGE_MAX` come back down.
+All logic tests pass standalone: `python3 -m pytest --ignore=tests/test_web.py`
+→ 495 pass, 10 skip. The 18 web tests need the vendored front-end assets
+(Plotly, Leaflet, map tiles, the service worker) under `static/`, which are not
+included here to keep the archive small — they already live in your repo. Run
+the full 544-test suite from your repo tree, where `static/` is present.
