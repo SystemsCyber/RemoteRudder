@@ -1,0 +1,588 @@
+07:51:57 INFO    can.interfaces.socketcan.socketcan Created a socket
+07:51:57 INFO    canlink    CAN bus open: socketcan:can0 @ 250000
+07:51:57 INFO    autopilot  Autopilot CSV log initialized at logs/autopilot_log_20260726_075157.csv
+07:51:57 INFO    autopilot  Autopilot run thread started.
+07:51:57 INFO    autopilot  set heading value to 179.6854220315191.
+07:51:58 INFO    autopilot  set heading value to 179.74268758609867.
+07:51:58 INFO    autopilot  set heading value to 179.8106813339536.
+07:51:58 INFO    autopilot  set heading value to 179.86743984559772.
+07:51:58 INFO    autopilot  set heading value to 179.90489604610542.
+07:51:59 INFO    autopilot  set heading value to 179.93722102146805.
+07:51:59 INFO    autopilot  set heading value to 179.96452253729984.
+07:51:59 INFO    autopilot  set heading value to 179.99294871852146.
+07:51:59 INFO    autopilot  set heading value to 180.01624504417993.
+07:52:00 INFO    autopilot  set heading value to 180.03670329890318.
+07:52:00 INFO    autopilot  set heading value to 180.06962648244058.
+07:52:00 INFO    autopilot  set heading goal to 180.06962648244058.
+07:52:00 INFO    autopilot  set heading value to 180.1090018535325.
+07:52:00 INFO    CAN        Sent CAN steering goal: 1422.8°  fcb5158045ffffff
+07:52:00 INFO    autopilot  set heading value to 180.15080094316005.
+07:52:01 INFO    autopilot  set heading value to 180.20629277110288.
+07:52:01 INFO    autopilot  set heading value to 180.2664332823562.
+07:52:01 INFO    autopilot  set heading value to 180.33865382864937.
+07:52:01 INFO    CAN        Sent CAN steering goal: 1415.8°  6d9a158045ffffff
+07:52:01 INFO    autopilot  set heading value to 180.40729636802087.
+07:52:02 INFO    autopilot  set heading value to 180.45518304929962.
+07:52:02 INFO    autopilot  set heading value to 180.5147007733277.
+07:52:02 INFO    autopilot  set heading value to 180.5844476940495.
+07:52:02 INFO    autopilot  set heading value to 180.64689949930624.
+07:52:03 INFO    autopilot  set heading value to 180.68708554381814.
+07:52:03 INFO    autopilot  set heading value to 180.70666377357284.
+07:52:03 INFO    autopilot  set heading value to 180.73172610494325.
+07:52:03 INFO    autopilot  set heading value to 180.75569585441775.
+07:52:04 INFO    autopilot  set heading value to 180.77462639521093.
+07:52:04 INFO    autopilot  set heading value to 180.8008294362209.
+07:52:04 INFO    autopilot  set heading value to 180.84759233525662.
+07:52:05 INFO    autopilot  set heading value to 180.8892745245842.
+07:52:05 INFO    autopilot  set heading value to 180.91641146924923.
+07:52:05 INFO    autopilot  set heading value to 180.93215994447283.
+07:52:05 INFO    autopilot  set heading value to 180.9409896590134.
+07:52:06 INFO    autopilot  set heading value to 180.9349512605805.
+07:52:06 INFO    autopilot  set heading value to 180.92815955080744.
+07:52:06 INFO    autopilot  set heading value to 180.9282398574608.
+07:52:06 INFO    autopilot  set heading value to 180.924340088739.
+07:52:07 INFO    autopilot  set heading value to 180.91445796097818.
+07:52:07 INFO    autopilot  set heading value to 180.90697527060152.
+07:52:07 INFO    autopilot  set heading value to 180.89183448841715.
+07:52:07 INFO    autopilot  set heading value to 180.8595326614877.
+07:52:08 INFO    autopilot  set heading value to 180.81298113138223.
+07:52:08 INFO    autopilot  set heading value to 180.76646011783723.
+07:52:08 INFO    autopilot  set heading value to 180.73063167347584.
+07:52:08 INFO    autopilot  set heading value to 180.69854739411102.
+07:52:09 INFO    autopilot  set heading value to 180.65893421734123.
+07:52:09 INFO    autopilot  set heading value to 180.60307595373874.
+07:52:09 INFO    autopilot  set heading value to 180.54162893097322.
+07:52:09 INFO    autopilot  set heading value to 180.4969817667316.
+07:52:10 INFO    autopilot  set heading value to 180.47634091604823.
+07:52:10 INFO    autopilot  set heading value to 180.47176897249665.
+07:52:10 INFO    autopilot  set heading value to 180.4775417295343.
+07:52:10 INFO    autopilot  set heading value to 180.48516608551117.
+07:52:11 INFO    autopilot  set heading value to 180.50090837302258.
+07:52:11 INFO    autopilot  set heading value to 180.50949275541257.
+07:52:11 INFO    autopilot  set heading value to 180.5259641595458.
+07:52:11 INFO    autopilot  set heading value to 180.5476596171086.
+07:52:12 INFO    autopilot  set heading value to 180.5649754901178.
+07:52:12 INFO    autopilot  set heading value to 180.57577673479418.
+07:52:12 INFO    autopilot  set heading value to 180.57522909676567.
+07:52:12 INFO    autopilot  set heading value to 180.5852020720839.
+07:52:13 INFO    autopilot  set heading value to 180.61347093683094.
+07:52:13 INFO    autopilot  set heading value to 180.65474783157217.
+07:52:13 INFO    autopilot  set heading value to 180.6991465861004.
+07:52:13 INFO    autopilot  set heading value to 180.74148167307132.
+07:52:14 INFO    autopilot  set heading value to 180.77331883838153.
+07:52:14 INFO    autopilot  set heading value to 180.80726196589686.
+07:52:14 INFO    autopilot  set heading value to 180.83871442762273.
+07:52:14 INFO    autopilot  set heading value to 180.85022462668115.
+07:52:15 INFO    autopilot  set heading value to 180.8518531554843.
+07:52:15 INFO    autopilot  set heading value to 180.8627248995137.
+07:52:15 INFO    autopilot  set heading value to 180.86989645704352.
+07:52:16 INFO    autopilot  set heading value to 180.87091285077406.
+07:52:16 INFO    autopilot  set heading value to 180.86163611993356.
+07:52:16 INFO    autopilot  set heading value to 180.833669110349.
+07:52:16 INFO    autopilot  set heading value to 180.79748882973283.
+07:52:17 INFO    autopilot  set heading value to 180.73795997953815.
+07:52:17 INFO    autopilot  set heading value to 180.6525819397155.
+07:52:17 INFO    autopilot  set heading value to 180.5527451385959.
+07:52:17 INFO    autopilot  set heading value to 180.4755182352587.
+07:52:18 INFO    autopilot  set heading value to 180.4175830693933.
+07:52:18 INFO    autopilot  set heading value to 180.36535190025114.
+07:52:18 INFO    autopilot  set heading value to 180.32138067763134.
+07:52:18 INFO    autopilot  set heading value to 180.26829491126065.
+07:52:19 INFO    autopilot  set heading value to 180.20292099777652.
+07:52:19 INFO    autopilot  set heading value to 180.13489136674363.
+07:52:19 INFO    autopilot  set heading value to 180.05661766744433.
+07:52:19 INFO    autopilot  set heading value to 179.97619771405869.
+07:52:20 INFO    autopilot  set heading value to 179.90663585810822.
+07:52:20 INFO    autopilot  set heading value to 179.8581548254432.
+07:52:20 INFO    autopilot  set heading value to 179.81370976119388.
+07:52:20 INFO    autopilot  set heading value to 179.78640932336467.
+07:52:21 INFO    autopilot  set heading value to 179.7738624210969.
+07:52:21 INFO    autopilot  set heading value to 179.75056835849665.
+07:52:21 INFO    autopilot  set heading value to 179.71741708763054.
+07:52:21 INFO    autopilot  set heading value to 179.68789877135845.
+07:52:22 INFO    autopilot  set heading value to 179.66804098413286.
+07:52:22 INFO    autopilot  set heading value to 179.66330115403272.
+07:52:22 INFO    autopilot  set heading value to 179.67520234478002.
+07:52:22 INFO    autopilot  set heading value to 179.69912374687672.
+07:52:23 INFO    autopilot  set heading value to 179.72822642268147.
+07:52:23 INFO    autopilot  set heading value to 179.76023649713034.
+07:52:23 INFO    autopilot  set heading value to 179.77686523390352.
+07:52:23 INFO    autopilot  set heading value to 179.76712723563645.
+07:52:24 INFO    autopilot  set heading value to 179.76135539793734.
+07:52:24 INFO    autopilot  set heading value to 179.76886343891726.
+07:52:24 INFO    autopilot  set heading value to 179.772765435365.
+07:52:24 INFO    autopilot  set heading value to 179.77561273299838.
+07:52:25 INFO    autopilot  set heading value to 179.77651288224098.
+07:52:25 INFO    autopilot  set heading value to 179.76426912062385.
+07:52:25 INFO    autopilot  set heading value to 179.73450892284777.
+07:52:25 INFO    autopilot  set heading value to 179.6823797837619.
+07:52:26 INFO    autopilot  set heading value to 179.62276455342067.
+07:52:26 INFO    autopilot  set heading value to 179.57590796815356.
+07:52:26 INFO    autopilot  set heading value to 179.52551672683492.
+07:52:27 INFO    autopilot  set heading value to 179.50240584870875.
+07:52:27 INFO    autopilot  set heading value to 179.49981042129986.
+07:52:27 INFO    autopilot  set heading value to 179.49266406659027.
+07:52:27 INFO    autopilot  set heading value to 179.4748137176458.
+07:52:28 INFO    autopilot  set heading value to 179.45465248501094.
+07:52:28 INFO    autopilot  set heading value to 179.42244433065645.
+07:52:28 INFO    autopilot  set heading value to 179.38272576302867.
+07:52:28 INFO    autopilot  set heading value to 179.3607669578497.
+07:52:29 INFO    autopilot  set heading value to 179.35904302578854.
+07:52:29 INFO    autopilot  set heading value to 179.3597481024092.
+07:52:29 INFO    CAN        Servo disabled
+07:52:29 INFO    CAN        Sent CAN steering goal: 1415.8°  6d9a158000000000
+07:52:29 INFO    autopilot  set heading value to 179.36145591854475.
+07:52:29 INFO    autopilot  set heading value to 179.3502856305259.
+07:52:30 INFO    autopilot  set heading value to 179.33342673417135.
+07:52:30 INFO    CAN        Servo enabled
+07:52:30 INFO    CAN        Sent CAN steering goal: 1415.8°  6d9a158045ffffff
+07:52:30 INFO    CAN        Sent CAN steering goal: 1405.8°  5d73158045ffffff
+07:52:30 INFO    autopilot  set heading value to 179.3129259549185.
+07:52:30 INFO    autopilot  set heading value to 179.28520713260346.
+07:52:30 INFO    CAN        Sent CAN steering goal: 1395.8°  4d4c158045ffffff
+07:52:30 INFO    autopilot  set heading value to 179.25984970966812.
+07:52:31 INFO    autopilot  set heading value to 179.23958677217527.
+07:52:31 INFO    CAN        Sent CAN steering goal: 1385.8°  3d25158045ffffff
+07:52:31 INFO    autopilot  set heading value to 179.2206373642666.
+07:52:31 INFO    autopilot  set heading value to 179.2080236007309.
+07:52:31 INFO    CAN        Sent CAN steering goal: 1375.8°  2dfe148045ffffff
+07:52:31 INFO    autopilot  set heading value to 179.19312535469678.
+07:52:31 INFO    CAN        Sent CAN steering goal: 1385.8°  3d25158045ffffff
+07:52:32 INFO    autopilot  set heading value to 179.18232092385023.
+07:52:32 INFO    CAN        Sent CAN steering goal: 1395.8°  4d4c158045ffffff
+07:52:32 INFO    autopilot  set heading value to 179.1783739683879.
+07:52:32 INFO    CAN        Servo disabled
+07:52:32 INFO    CAN        Sent CAN steering goal: 1395.8°  4d4c158000000000
+07:52:32 INFO    autopilot  set heading value to 179.17988223544455.
+07:52:32 INFO    autopilot  set heading value to 179.2077334167263.
+07:52:33 INFO    CAN        Servo enabled
+07:52:33 INFO    CAN        Sent CAN steering goal: 1395.8°  4d4c158045ffffff
+07:52:33 INFO    CAN        Sent CAN steering goal: 1405.8°  5d73158045ffffff
+07:52:33 INFO    autopilot  set heading value to 179.27129558707307.
+07:52:33 INFO    autopilot  set heading value to 179.3327859117602.
+07:52:33 INFO    CAN        Sent CAN steering goal: 1415.8°  6d9a158045ffffff
+07:52:33 INFO    autopilot  set heading value to 179.3799587489176.
+07:52:33 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158045ffffff
+07:52:33 INFO    autopilot  set heading value to 179.41845629877375.
+07:52:34 INFO    CAN        Servo disabled
+07:52:34 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158000000000
+07:52:34 INFO    autopilot  set heading value to 179.450401827236.
+07:52:34 INFO    autopilot  set heading value to 179.4752603452622.
+07:52:34 INFO    autopilot  set heading value to 179.51448845744122.
+07:52:34 INFO    autopilot  set heading value to 179.55781397181494.
+07:52:35 INFO    CAN        Servo enabled
+07:52:35 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158045ffffff
+07:52:35 INFO    CAN        Sent CAN steering goal: 1415.8°  6d9a158045ffffff
+07:52:35 INFO    autopilot  set heading value to 179.60881498771926.
+07:52:35 INFO    autopilot  set heading value to 179.671945249372.
+07:52:35 INFO    CAN        Sent CAN steering goal: 1405.8°  5d73158045ffffff
+07:52:35 INFO    autopilot  set heading value to 179.72105748918463.
+07:52:35 INFO    autopilot  set heading value to 179.76482469031387.
+07:52:35 INFO    CAN        Servo disabled
+07:52:35 INFO    CAN        Sent CAN steering goal: 1405.8°  5d73158000000000
+07:52:36 INFO    autopilot  set heading value to 179.81789247975618.
+07:52:36 INFO    CAN        Servo enabled
+07:52:36 INFO    CAN        Sent CAN steering goal: 1405.8°  5d73158045ffffff
+07:52:36 INFO    CAN        Sent CAN steering goal: 1415.8°  6d9a158045ffffff
+07:52:36 INFO    autopilot  set heading value to 179.87524054522402.
+07:52:36 INFO    autopilot  set heading value to 179.92168640972744.
+07:52:36 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158045ffffff
+07:52:36 INFO    autopilot  set heading value to 179.94280535043907.
+07:52:37 INFO    CAN        Sent CAN steering goal: 1435.8°  8de8158045ffffff
+07:52:37 INFO    autopilot  set heading value to 179.9496379427835.
+07:52:37 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158045ffffff
+07:52:37 INFO    autopilot  set heading value to 179.95553882310222.
+07:52:37 INFO    autopilot  set heading value to 179.9769974847108.
+07:52:37 INFO    CAN        Servo disabled
+07:52:37 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158000000000
+07:52:37 INFO    autopilot  set heading value to 179.99839050231463.
+07:52:38 INFO    autopilot  set heading value to 180.01195560140528.
+07:52:38 INFO    CAN        Servo enabled
+07:52:38 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158045ffffff
+07:52:38 INFO    autopilot  set heading value to 180.0152821648335.
+07:52:38 INFO    autopilot  set heading value to 180.00377890320988.
+07:52:38 INFO    CAN        Servo disabled
+07:52:38 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158000000000
+07:52:39 INFO    autopilot  set heading value to 179.99317975870727.
+07:52:39 INFO    autopilot  set heading value to 179.99100256934096.
+07:52:39 INFO    CAN        Servo enabled
+07:52:39 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158045ffffff
+07:52:39 INFO    CAN        Sent CAN steering goal: 1415.8°  6d9a158045ffffff
+07:52:39 INFO    autopilot  set heading value to 179.98670329603144.
+07:52:39 INFO    autopilot  set heading value to 179.9772347969617.
+07:52:40 INFO    autopilot  set heading value to 179.96577960794858.
+07:52:40 INFO    autopilot  set heading value to 179.95358774059994.
+07:52:40 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158045ffffff
+07:52:40 INFO    autopilot  set heading value to 179.93864484082366.
+07:52:40 INFO    CAN        Sent CAN steering goal: 1435.8°  8de8158045ffffff
+07:52:40 INFO    CAN        Sent CAN steering goal: 1445.8°  9d0f168045ffffff
+07:52:40 INFO    autopilot  set heading value to 179.9264916099417.
+07:52:40 INFO    CAN        Sent CAN steering goal: 1455.8°  ad36168045ffffff
+07:52:41 INFO    autopilot  set heading value to 179.90868949896793.
+07:52:41 INFO    CAN        Sent CAN steering goal: 1465.8°  bd5d168045ffffff
+07:52:41 INFO    autopilot  set heading value to 179.89455392766322.
+07:52:41 INFO    CAN        Sent CAN steering goal: 1475.8°  cd84168045ffffff
+07:52:41 INFO    autopilot  set heading value to 179.89546846967318.
+07:52:41 INFO    autopilot  set heading value to 179.89993608930246.
+07:52:41 INFO    CAN        Sent CAN steering goal: 1485.8°  ddab168045ffffff
+07:52:42 INFO    autopilot  set heading value to 179.89917044886025.
+07:52:42 INFO    autopilot  set heading value to 179.8973032873223.
+07:52:42 INFO    CAN        Sent CAN steering goal: 1495.8°  edd2168045ffffff
+07:52:42 INFO    autopilot  set heading value to 179.9030646316996.
+07:52:42 INFO    autopilot  set heading value to 179.897685866908.
+07:52:42 INFO    CAN        Sent CAN steering goal: 1505.8°  fdf9168045ffffff
+07:52:43 INFO    autopilot  set heading value to 179.8951654361443.
+07:52:43 INFO    autopilot  set heading value to 179.90303774726698.
+07:52:43 INFO    CAN        Sent CAN steering goal: 1515.8°  0d21178045ffffff
+07:52:43 INFO    autopilot  set heading value to 179.92027383659675.
+07:52:43 INFO    autopilot  set heading value to 179.94265590446005.
+07:52:43 INFO    CAN        Sent CAN steering goal: 1525.8°  1d48178045ffffff
+07:52:44 INFO    CAN        Sent CAN steering goal: 1535.8°  2d6f178045ffffff
+07:52:44 INFO    autopilot  set heading value to 179.97281240909908.
+07:52:44 INFO    CAN        Sent CAN steering goal: 1545.8°  3d96178045ffffff
+07:52:44 INFO    autopilot  set heading value to 180.01939680658265.
+07:52:44 INFO    CAN        Sent CAN steering goal: 1555.8°  4dbd178045ffffff
+07:52:44 INFO    autopilot  set heading value to 180.06151766859557.
+07:52:44 INFO    CAN        Sent CAN steering goal: 1565.8°  5de4178045ffffff
+07:52:44 INFO    CAN        Sent CAN steering goal: 1575.8°  6d0b188045ffffff
+07:52:44 INFO    autopilot  set heading value to 180.09175411636522.
+07:52:45 INFO    CAN        Sent CAN steering goal: 1585.8°  7d32188045ffffff
+07:52:45 INFO    autopilot  set heading value to 180.10759262232133.
+07:52:45 INFO    CAN        Sent CAN steering goal: 1595.8°  8d59188045ffffff
+07:52:45 INFO    autopilot  set heading value to 180.10962369577928.
+07:52:45 INFO    CAN        Sent CAN steering goal: 1605.8°  9d80188045ffffff
+07:52:45 INFO    autopilot  set heading value to 180.110821874569.
+07:52:45 INFO    CAN        Sent CAN steering goal: 1615.8°  ada7188045ffffff
+07:52:45 INFO    autopilot  set heading value to 180.11005004822414.
+07:52:45 INFO    CAN        Sent CAN steering goal: 1625.8°  bdce188045ffffff
+07:52:46 INFO    CAN        Sent CAN steering goal: 1635.8°  cdf5188045ffffff
+07:52:46 INFO    autopilot  set heading value to 180.11954877742127.
+07:52:46 INFO    autopilot  set heading value to 180.13917015640536.
+07:52:46 INFO    autopilot  set heading value to 180.1529294394935.
+07:52:46 INFO    autopilot  set heading value to 180.16429745724662.
+07:52:47 INFO    CAN        Sent CAN steering goal: 1645.8°  dd1c198045ffffff
+07:52:47 INFO    autopilot  set heading value to 180.16793949945648.
+07:52:47 INFO    CAN        Sent CAN steering goal: 1655.8°  ed43198045ffffff
+07:52:47 INFO    autopilot  set heading value to 180.1776340734198.
+07:52:47 INFO    CAN        Sent CAN steering goal: 1665.8°  fd6a198045ffffff
+07:52:47 INFO    autopilot  set heading value to 180.19106278001522.
+07:52:47 INFO    CAN        Sent CAN steering goal: 1675.8°  0d92198045ffffff
+07:52:47 INFO    CAN        Sent CAN steering goal: 1685.8°  1db9198045ffffff
+07:52:47 INFO    autopilot  set heading value to 180.1876000886275.
+07:52:48 INFO    CAN        Sent CAN steering goal: 1695.8°  2de0198045ffffff
+07:52:48 INFO    autopilot  set heading value to 180.16415569148953.
+07:52:48 INFO    CAN        Sent CAN steering goal: 1705.8°  3d071a8045ffffff
+07:52:48 INFO    autopilot  set heading value to 180.13810811809722.
+07:52:48 INFO    CAN        Sent CAN steering goal: 1715.8°  4d2e1a8045ffffff
+07:52:48 INFO    autopilot  set heading value to 180.1226061566523.
+07:52:48 INFO    CAN        Sent CAN steering goal: 1725.8°  5d551a8045ffffff
+07:52:48 INFO    autopilot  set heading value to 180.09163818184703.
+07:52:49 INFO    CAN        Sent CAN steering goal: 1715.8°  4d2e1a8045ffffff
+07:52:49 INFO    autopilot  set heading value to 180.0500727290475.
+07:52:49 INFO    CAN        Sent CAN steering goal: 1705.8°  3d071a8045ffffff
+07:52:49 INFO    CAN        Sent CAN steering goal: 1695.8°  2de0198045ffffff
+07:52:49 INFO    autopilot  set heading value to 180.02123768783332.
+07:52:49 INFO    autopilot  set heading value to 179.99746921199088.
+07:52:49 INFO    CAN        Sent CAN steering goal: 1685.8°  1db9198045ffffff
+07:52:49 INFO    autopilot  set heading value to 179.97908400006318.
+07:52:50 INFO    autopilot  set heading value to 179.96240099648912.
+07:52:50 INFO    CAN        Sent CAN steering goal: 1675.8°  0d92198045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1665.8°  fd6a198045ffffff
+07:52:50 INFO    autopilot  set heading value to 179.94956496138042.
+07:52:50 INFO    CAN        Sent CAN steering goal: 1655.8°  ed43198045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1645.8°  dd1c198045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1635.8°  cdf5188045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1625.8°  bdce188045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1615.8°  ada7188045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1605.8°  9d80188045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1595.8°  8d59188045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1585.8°  7d32188045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1575.8°  6d0b188045ffffff
+07:52:50 INFO    autopilot  set heading value to 179.9563371544347.
+07:52:50 INFO    CAN        Sent CAN steering goal: 1565.8°  5de4178045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1555.8°  4dbd178045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1545.8°  3d96178045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1535.8°  2d6f178045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1525.8°  1d48178045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1515.8°  0d21178045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1505.8°  fdf9168045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1495.8°  edd2168045ffffff
+07:52:50 INFO    CAN        Sent CAN steering goal: 1485.8°  ddab168045ffffff
+07:52:51 INFO    autopilot  set heading value to 179.9443364576544.
+07:52:51 INFO    CAN        Sent CAN steering goal: 1475.8°  cd84168045ffffff
+07:52:51 INFO    autopilot  set heading value to 179.89806073631888.
+07:52:51 INFO    autopilot  set heading value to 179.83575757000406.
+07:52:51 INFO    CAN        Sent CAN steering goal: 1465.8°  bd5d168045ffffff
+07:52:51 INFO    autopilot  set heading value to 179.77141341786412.
+07:52:52 INFO    autopilot  set heading value to 179.72379019705284.
+07:52:52 INFO    CAN        Sent CAN steering goal: 1455.8°  ad36168045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1445.8°  9d0f168045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1435.8°  8de8158045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1425.8°  7dc1158045ffffff
+07:52:52 INFO    autopilot  set heading value to 179.68145665586985.
+07:52:52 INFO    CAN        Sent CAN steering goal: 1415.8°  6d9a158045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1405.8°  5d73158045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1395.8°  4d4c158045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1385.8°  3d25158045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1375.8°  2dfe148045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1365.8°  1dd7148045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1355.8°  0db0148045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1345.8°  fd88148045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1335.8°  ed61148045ffffff
+07:52:52 INFO    autopilot  set heading value to 179.61912581808588.
+07:52:52 INFO    CAN        Sent CAN steering goal: 1325.8°  dd3a148045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1315.8°  cd13148045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1305.8°  bdec138045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1295.8°  adc5138045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1285.8°  9d9e138045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1275.8°  8d77138045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1265.8°  7d50138045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1255.8°  6d29138045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1245.8°  5d02138045ffffff
+07:52:52 INFO    autopilot  set heading value to 179.5449638109811.
+07:52:52 INFO    CAN        Sent CAN steering goal: 1235.8°  4ddb128045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1225.8°  3db4128045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1215.8°  2d8d128045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1205.8°  1d66128045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1195.8°  0d3f128045ffffff
+07:52:52 INFO    CAN        Sent CAN steering goal: 1185.8°  fd17128045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1175.8°  edf0118045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1165.8°  ddc9118045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1155.8°  cda2118045ffffff
+07:52:53 INFO    autopilot  set heading value to 179.49287883399163.
+07:52:53 INFO    CAN        Sent CAN steering goal: 1145.8°  bd7b118045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1135.8°  ad54118045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1125.8°  9d2d118045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1115.8°  8d06118045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1105.8°  7ddf108045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1095.8°  6db8108045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1085.8°  5d91108045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1075.8°  4d6a108045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1065.8°  3d43108045ffffff
+07:52:53 INFO    autopilot  set heading value to 179.45045681586512.
+07:52:53 INFO    CAN        Sent CAN steering goal: 1055.8°  2d1c108045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1045.8°  1df50f8045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1035.8°  0dce0f8045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1025.8°  fda60f8045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1015.8°  ed7f0f8045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 1005.8°  dd580f8045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 995.8°  cd310f8045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 985.8°  bd0a0f8045ffffff
+07:52:53 INFO    CAN        Sent CAN steering goal: 975.8°  ade30e8045ffffff
+07:52:53 INFO    autopilot  set heading value to 179.39753656109363.
+07:52:53 INFO    CAN        Sent CAN steering goal: 965.8°  9dbc0e8045ffffff
+07:52:53 INFO    autopilot  set heading value to 179.34047685965302.
+07:52:53 INFO    CAN        Sent CAN steering goal: 955.8°  8d950e8045ffffff
+07:52:54 INFO    autopilot  set heading value to 179.29869810621756.
+07:52:54 INFO    CAN        Sent CAN steering goal: 945.8°  7d6e0e8045ffffff
+07:52:54 INFO    autopilot  set heading value to 179.25352622423088.
+07:52:54 INFO    CAN        Sent CAN steering goal: 935.8°  6d470e8045ffffff
+07:52:54 INFO    autopilot  set heading value to 179.2022431372966.
+07:52:54 INFO    CAN        Sent CAN steering goal: 925.8°  5d200e8045ffffff
+07:52:54 INFO    CAN        Sent CAN steering goal: 915.8°  4df90d8045ffffff
+07:52:54 INFO    autopilot  set heading value to 179.1597024461208.
+07:52:54 INFO    CAN        Sent CAN steering goal: 905.8°  3dd20d8045ffffff
+07:52:55 INFO    autopilot  set heading value to 179.1471236779556.
+07:52:55 INFO    CAN        Sent CAN steering goal: 895.8°  2dab0d8045ffffff
+07:52:55 INFO    CAN        Sent CAN steering goal: 885.8°  1d840d8045ffffff
+07:52:55 INFO    autopilot  set heading value to 179.12450769361197.
+07:52:55 INFO    CAN        Sent CAN steering goal: 875.8°  0d5d0d8045ffffff
+07:52:55 INFO    autopilot  set heading value to 179.08858366304827.
+07:52:55 INFO    CAN        Sent CAN steering goal: 865.8°  fd350d8045ffffff
+07:52:55 INFO    autopilot  set heading value to 179.06993704683208.
+07:52:56 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:52:56 INFO    autopilot  set heading value to 179.06521251548853.
+07:52:56 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:52:56 INFO    autopilot  set heading value to 179.06518985013744.
+07:52:56 INFO    CAN        Sent CAN steering goal: 835.8°  cdc00c8045ffffff
+07:52:56 INFO    CAN        Sent CAN steering goal: 825.8°  bd990c8045ffffff
+07:52:56 INFO    autopilot  set heading value to 179.08590087241777.
+07:52:56 INFO    CAN        Sent CAN steering goal: 815.8°  ad720c8045ffffff
+07:52:56 INFO    autopilot  set heading value to 179.1206242421216.
+07:52:57 INFO    CAN        Sent CAN steering goal: 805.8°  9d4b0c8045ffffff
+07:52:57 INFO    autopilot  set heading value to 179.14438990079466.
+07:52:57 INFO    CAN        Sent CAN steering goal: 795.8°  8d240c8045ffffff
+07:52:57 INFO    autopilot  set heading value to 179.14878151475307.
+07:52:57 INFO    CAN        Sent CAN steering goal: 805.8°  9d4b0c8045ffffff
+07:52:57 INFO    autopilot  set heading value to 179.15135796429473.
+07:52:57 INFO    CAN        Sent CAN steering goal: 815.8°  ad720c8045ffffff
+07:52:57 INFO    autopilot  set heading value to 179.18268264276944.
+07:52:57 INFO    CAN        Sent CAN steering goal: 825.8°  bd990c8045ffffff
+07:52:58 INFO    CAN        Sent CAN steering goal: 835.8°  cdc00c8045ffffff
+07:52:58 INFO    autopilot  set heading value to 179.2346284665035.
+07:52:58 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:52:58 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:52:58 INFO    autopilot  set heading value to 179.29434401152173.
+07:52:58 INFO    CAN        Sent CAN steering goal: 865.8°  fd350d8045ffffff
+07:52:58 INFO    autopilot  set heading value to 179.32376614081912.
+07:52:58 INFO    CAN        Sent CAN steering goal: 875.8°  0d5d0d8045ffffff
+07:52:58 INFO    autopilot  set heading value to 179.3164489666173.
+07:52:59 INFO    CAN        Sent CAN steering goal: 865.8°  fd350d8045ffffff
+07:52:59 INFO    autopilot  set heading value to 179.30319158646094.
+07:52:59 INFO    autopilot  set heading value to 179.2946924076783.
+07:52:59 INFO    autopilot  set heading value to 179.30398081180803.
+07:52:59 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:52:59 INFO    autopilot  set heading value to 179.34160196287016.
+07:53:00 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:53:00 INFO    autopilot  set heading value to 179.39154573016157.
+07:53:00 INFO    CAN        Sent CAN steering goal: 835.8°  cdc00c8045ffffff
+07:53:00 INFO    autopilot  set heading value to 179.44872532673708.
+07:53:00 INFO    CAN        Sent CAN steering goal: 825.8°  bd990c8045ffffff
+07:53:00 INFO    CAN        Sent CAN steering goal: 815.8°  ad720c8045ffffff
+07:53:00 INFO    autopilot  set heading value to 179.48606533791397.
+07:53:01 INFO    autopilot  set heading value to 179.50574482695555.
+07:53:01 INFO    CAN        Sent CAN steering goal: 805.8°  9d4b0c8045ffffff
+07:53:01 INFO    CAN        Sent CAN steering goal: 795.8°  8d240c8045ffffff
+07:53:01 INFO    autopilot  set heading value to 179.5153609478176.
+07:53:01 INFO    autopilot  set heading value to 179.5350742289866.
+07:53:01 INFO    CAN        Sent CAN steering goal: 805.8°  9d4b0c8045ffffff
+07:53:01 INFO    autopilot  set heading value to 179.58463617641073.
+07:53:01 INFO    CAN        Sent CAN steering goal: 815.8°  ad720c8045ffffff
+07:53:01 INFO    CAN        Sent CAN steering goal: 825.8°  bd990c8045ffffff
+07:53:02 INFO    autopilot  set heading value to 179.65253016331715.
+07:53:02 INFO    CAN        Sent CAN steering goal: 835.8°  cdc00c8045ffffff
+07:53:02 INFO    autopilot  set heading value to 179.716315151773.
+07:53:02 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:53:02 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:53:02 INFO    autopilot  set heading value to 179.77746357326103.
+07:53:02 INFO    autopilot  set heading value to 179.82375852598537.
+07:53:03 INFO    CAN        Sent CAN steering goal: 865.8°  fd350d8045ffffff
+07:53:03 INFO    autopilot  set heading value to 179.8527244361624.
+07:53:03 INFO    CAN        Sent CAN steering goal: 875.8°  0d5d0d8045ffffff
+07:53:03 INFO    autopilot  set heading value to 179.8720828931376.
+07:53:03 INFO    autopilot  set heading value to 179.901657182898.
+07:53:03 INFO    autopilot  set heading value to 179.92855469751467.
+07:53:03 INFO    CAN        Servo disabled
+07:53:03 INFO    CAN        Sent CAN steering goal: 875.8°  0d5d0d8000000000
+07:53:04 INFO    autopilot  set heading value to 179.95083870067106.
+07:53:04 INFO    autopilot  set heading value to 179.95686357137978.
+07:53:04 INFO    autopilot  set heading value to 179.94974683422362.
+07:53:04 INFO    autopilot  set heading value to 179.93681495323722.
+07:53:05 INFO    autopilot  set heading value to 179.93971817953013.
+07:53:05 INFO    CAN        Servo enabled
+07:53:05 INFO    CAN        Sent CAN steering goal: 875.8°  0d5d0d8045ffffff
+07:53:05 INFO    CAN        Sent CAN steering goal: 865.8°  fd350d8045ffffff
+07:53:05 INFO    autopilot  set heading value to 179.92811636449784.
+07:53:05 INFO    autopilot  set heading value to 179.9106134914034.
+07:53:05 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:53:05 INFO    autopilot  set heading value to 179.90823541570597.
+07:53:05 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:53:06 INFO    CAN        Sent CAN steering goal: 835.8°  cdc00c8045ffffff
+07:53:06 INFO    autopilot  set heading value to 179.91001390056792.
+07:53:06 INFO    autopilot  set heading value to 179.91270687077392.
+07:53:06 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:53:06 INFO    autopilot  set heading value to 179.93099678135115.
+07:53:06 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:53:06 INFO    autopilot  set heading value to 179.96149973523015.
+07:53:06 INFO    CAN        Sent CAN steering goal: 865.8°  fd350d8045ffffff
+07:53:07 INFO    autopilot  set heading value to 179.98240491337248.
+07:53:07 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:53:07 INFO    autopilot  set heading value to 179.99181575544722.
+07:53:07 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:53:07 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:53:07 INFO    autopilot  set heading value to 179.9964739189043.
+07:53:07 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:53:07 INFO    autopilot  set heading value to 180.00942100011213.
+07:53:08 INFO    CAN        Sent CAN steering goal: 855.8°  ed0e0d8045ffffff
+07:53:08 INFO    autopilot  set heading value to 180.01767871081753.
+07:53:08 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:53:08 INFO    autopilot  set heading value to 180.01724997019832.
+07:53:08 INFO    autopilot  set heading value to 180.02827079195438.
+07:53:08 INFO    autopilot  set heading value to 180.04152131027604.
+07:53:09 INFO    autopilot  set heading value to 180.04805184950754.
+07:53:09 INFO    autopilot  set heading value to 180.05460922552314.
+07:53:09 INFO    CAN        Servo disabled
+07:53:09 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8000000000
+07:53:09 INFO    autopilot  set heading value to 180.0665180766237.
+07:53:09 INFO    autopilot  set heading value to 180.0796961813576.
+07:53:10 INFO    autopilot  set heading value to 180.08528444247443.
+07:53:10 INFO    autopilot  set heading value to 180.0738808118595.
+07:53:10 INFO    CAN        Servo enabled
+07:53:10 INFO    CAN        Sent CAN steering goal: 845.8°  dde70c8045ffffff
+07:53:10 INFO    autopilot  set heading value to 180.05745826379135.
+07:53:10 INFO    autopilot  set heading value to 180.04813630903882.
+07:53:11 INFO    autopilot  set heading value to 180.05532933495346.
+07:53:11 INFO    autopilot  set heading value to 180.06036250942958.
+07:53:11 INFO    autopilot  set heading value to 180.0361399747533.
+07:53:11 INFO    autopilot  set heading goal to 180.0361399747533.
+07:53:11 INFO    autopilot  set heading value to 180.01026509416585.
+07:53:12 INFO    CAN        Sent CAN steering goal: 1426.3°  67c3158045ffffff
+07:53:12 INFO    autopilot  set heading value to 179.98700892135614.
+07:53:12 INFO    autopilot  set heading value to 179.97609364670114.
+07:53:12 INFO    autopilot  set heading goal to 179.97609364670114.
+07:53:12 INFO    autopilot  set heading value to 179.9770797392897.
+07:53:12 INFO    autopilot  set heading value to 179.97191922812078.
+07:53:13 INFO    autopilot  set heading goal to 179.97191922812078.
+07:53:13 INFO    CAN        Sent CAN steering goal: 1425.0°  85be158045ffffff
+07:53:13 INFO    autopilot  set heading value to 179.96301085325294.
+07:53:13 INFO    autopilot  set heading goal to 179.96301085325294.
+07:53:13 INFO    autopilot  set heading value to 179.96999579459677.
+07:53:13 INFO    autopilot  set heading value to 179.98662424046185.
+07:53:14 INFO    autopilot  set heading value to 179.98107770956952.
+07:53:14 INFO    autopilot  set heading value to 179.9525403243364.
+07:53:14 INFO    autopilot  set heading value to 179.9139325790323.
+07:53:14 INFO    autopilot  set heading value to 179.8717833597013.
+07:53:15 INFO    autopilot  set heading value to 179.82289868059786.
+07:53:15 INFO    autopilot  set heading goal to 179.82289868059786.
+07:53:15 INFO    autopilot  set heading value to 179.76548846684506.
+07:53:15 INFO    autopilot  set heading value to 179.7201422867764.
+07:53:15 INFO    autopilot  set heading value to 179.6959372723714.
+07:53:16 INFO    autopilot  set heading value to 179.68250132517963.
+07:53:16 INFO    autopilot  set heading value to 179.66970448963832.
+07:53:16 INFO    autopilot  set heading value to 179.66047627750976.
+07:53:16 INFO    autopilot  set heading value to 179.65810686484846.
+07:53:17 INFO    autopilot  set heading value to 179.66354141103184.
+07:53:17 INFO    autopilot  set heading value to 179.68682182064487.
+07:53:17 INFO    autopilot  set heading value to 179.72282169575234.
+07:53:17 INFO    autopilot  set heading value to 179.74663861763395.
+07:53:18 INFO    CAN        Sent CAN steering goal: 1435.0°  95e5158045ffffff
+07:53:18 INFO    autopilot  set heading value to 179.755859407468.
+07:53:18 INFO    CAN        Sent CAN steering goal: 1445.0°  a50c168045ffffff
+07:53:18 INFO    autopilot  set heading value to 179.7597098951465.
+07:53:18 INFO    CAN        Sent CAN steering goal: 1455.0°  b533168045ffffff
+07:53:18 INFO    autopilot  set heading value to 179.77731919389515.
+07:53:18 INFO    autopilot  set heading value to 179.80107877812188.
+07:53:19 INFO    autopilot  set heading value to 179.82127183585538.
+07:53:19 INFO    autopilot  set heading value to 179.84045706437277.
+07:53:19 INFO    autopilot  set heading goal to 179.84045706437277.
+07:53:19 INFO    autopilot  set heading value to 179.87009805433243.
+07:53:19 INFO    autopilot  set heading value to 179.8995580082209.
+07:53:20 INFO    autopilot  set heading value to 179.9241557186941.
+07:53:20 INFO    CAN        Sent CAN steering goal: 1422.0°  a8b2158045ffffff
+07:53:20 INFO    autopilot  set heading value to 179.95100441944865.
+07:53:20 INFO    autopilot  set heading value to 179.96522957656242.
+07:53:20 INFO    autopilot  set heading value to 179.96678461519852.
+07:53:21 INFO    autopilot  set heading value to 179.96806885840098.
+07:53:21 INFO    autopilot  set heading value to 179.96993688658415.
+07:53:21 INFO    autopilot  set heading value to 179.9681301849207.
+07:53:21 INFO    autopilot  set heading value to 179.9589728118291.
+07:53:22 INFO    autopilot  set heading value to 179.94644099998666.
+07:53:22 INFO    autopilot  set heading value to 179.95386051303.
+07:53:22 INFO    autopilot  set heading value to 179.973401175378.
+07:53:22 INFO    autopilot  set heading value to 179.9642623361747.
+07:53:23 INFO    autopilot  set heading value to 179.92263736201895.
+07:53:23 INFO    autopilot  set heading value to 179.86695493299973.
+07:53:23 INFO    autopilot  set heading value to 179.82150314154924.
+07:53:23 INFO    autopilot  set heading value to 179.80648812927112.
+07:53:24 INFO    autopilot  set heading value to 179.8112157889128.
+07:53:24 INFO    autopilot  set heading value to 179.82966067773015.
+07:53:24 INFO    autopilot  set heading value to 179.85873193172918.
+07:53:24 INFO    CAN        Sent CAN steering goal: 1432.0°  b8d9158045ffffff
+07:53:24 INFO    autopilot  set heading value to 179.9060186201173.
+07:53:25 INFO    autopilot  set heading value to 179.96413747544105.
+07:53:25 INFO    CAN        Sent CAN steering goal: 1442.0°  c800168045ffffff
+07:53:25 INFO    autopilot  set heading value to 179.9933052352567.
+07:53:25 INFO    CAN        Sent CAN steering goal: 1452.0°  d827168045ffffff
+07:53:25 INFO    autopilot  set heading value to 180.0000158524507.
+07:53:25 INFO    CAN        Sent CAN steering goal: 1462.0°  e84e168045ffffff
+07:53:26 INFO    autopilot  set heading value to 179.9992161864988.
+07:53:26 INFO    autopilot  set heading value to 180.0004798867648.
+07:53:26 INFO    autopilot  set heading value to 180.01278857586064.
+07:53:26 INFO    autopilot  set heading value to 180.04117849940997.
+07:53:27 INFO    autopilot  set heading value to 180.06772115138892.
+07:53:27 INFO    autopilot  set heading value to 180.08983533562977.
+07:53:27 INFO    autopilot  set heading value to 180.11785071230912.
+07:53:27 INFO    autopilot  Autopilot CSV log closed.
+07:53:27 INFO    autopilot  Autopilot stopped.
+07:53:27 INFO    CAN        Servo disabled
+07:53:27 INFO    CAN        Sent CAN steering goal: 1462.0°  e84e168000000000

@@ -10,6 +10,9 @@ import datetime
 import queue
 import statistics
 
+AUTOPILOT_CAN_ID = 0x18FF50E0
+
+
 # Setup logger
 logger = logging.getLogger('autopilot')
 logger.setLevel(logging.INFO)
@@ -133,12 +136,12 @@ class Autopilot():
 
             data = struct.pack("<BHHHB", engaged_byte, heading_goal, heading_error, rudder_goal, (self.counter & 0xFF))
 
-            msg = can.Message(arbitration_id=0x18FF50E0,  # example PGN (can change)
+            msg = can.Message(arbitration_id=AUTOPILOT_CAN_ID,  # example PGN (can change)
                             data=data,
                             is_extended_id=True)
 
             self.bus.send(msg)
-            logger.debug(f"Sent Autopilot status: {0x18FF50E0:08X} {data.hex()}")
+            logger.debug(f"Sent Autopilot status: {AUTOPILOT_CAN_ID:08X} {data.hex()}")
 
         except can.CanError:
             logger.exception("CAN message failed to send")
@@ -164,7 +167,7 @@ class Autopilot():
     def set_steering_shaft_limits(self, min_val, max_val):
         self.steering_shaft_min = float(min_val)
         self.steering_shaft_max = float(max_val)
-        logger.info(f"Set steering shaft limits: min={self.steering_shaft_min}, max={self.steering_shaft_max}")
+        logger.debug(f"Set steering shaft limits: min={self.steering_shaft_min}, max={self.steering_shaft_max}")
 
 
     def run(self):
@@ -212,7 +215,7 @@ class Autopilot():
             self.broadcast_status_message()
             logger.debug(f"heading error: {self.heading_error:.2f}, Computed shaft goal: {self.shaft_goal:.2f}")
             #if self.autopilot_engaged == True:
-            if not self.autopilot_engaged_event.isSet():
+            if not self.autopilot_engaged_event.is_set():
                 self.heading_goal = self.current_heading
                 self.error_list = []
                 self.time_list = []
@@ -224,7 +227,7 @@ class Autopilot():
                 if abs(self.shaft_goal_mean - self.last_shaft_goal) > 100: # deadband
                     # Generate a command and broadcast the steering
                     self.last_shaft_goal = self.shaft_goal_mean
-                    if self.autopilot_engaged_event.isSet():
+                    if self.autopilot_engaged_event.is_set():
                         self.can_interface.set_shaft_goal(self.shaft_goal)
                         self.can_interface.send_shaft_goal()
                         logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")

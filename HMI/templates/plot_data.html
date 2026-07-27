@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CAN Live Graphs</title>
+<script src="/static/js/plotly-2.35.2.min.js"></script>
+<link rel="stylesheet" href="/static/js/leaflet-1.9.4/leaflet.css"/>
+<script src="/static/js/leaflet-1.9.4/leaflet.js"></script>
+<script>
+  // Replace your OSM tileLayer with a local PMTiles basemap
+  // Horsetooth default; toggle to Jackson Lake as needed.
+  const pmLayer = protomapsL.leafletLayer({
+    url: "/static/tiles/horsetooth.pmtiles",
+    flavor: "dark",   // light | dark | white | grayscale | black
+    lang: "en"
+  }).addTo(map);
+
+  // Example: switch to Horsetooth on demand:
+  function useHorsetooth() {
+    map.setView([40.56,-105.16], 13);
+    pmLayer.setUrl("/static/tiles/horsetooth.pmtiles");
+  }
+</script>
+<style>
+  body { 
+    margin:0; 
+    background:#111; 
+    color:#eee; 
+    font-family:system-ui, Arial; 
+  }
+  .grid { 
+    display:grid; 
+    grid-template-columns: 2fr 1fr; 
+    grid-template-rows: 1fr 1fr; 
+    gap:8px; 
+    padding:8px; 
+  }
+  .card { 
+    background:#1b1b1b; 
+    border-radius:12px; 
+    padding:6px; 
+    box-shadow:0 2px 4px rgba(0,0,0,0.2);
+    
+    justify-content:center;
+    align-items:center;
+  }
+  #map {  
+    height: 500px; 
+    border-radius:12px; 
+  }
+  .title { 
+    padding:8px; 
+    font-weight:600; 
+    }
+</style>
+</head>
+<body>
+<div class="title">Live Autopilot Telemetry</div>
+<div class="grid">  
+  <div id="angles" class="card"></div>
+  <div class="card"><div id="map"></div></div>
+  <div id="rpm_speed" class="card"></div>
+</div>
+
+<script>
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(console.error);
+}
+
+// ----- Dual-axis RPM/Speed -----
+let RPM_SPEED_GD = null;
+let rpmSpeedReady = false;
+const rpmBacklog = [];
+
+function makeRpmSpeedChart() {
+  RPM_SPEED_GD = document.getElementById("rpm_speed");
+  const traces = [
+    { name: "Engine RPM", x: [], y: [], mode: "lines", connectgaps: true, line: {shape:"linear"} },
+    { name: "Vessel Speed (mph)", x: [], y: [], mode: "lines", connectgaps: true, line: {shape:"linear"}, yaxis: "y2" }
+  ];
+  const layout = {
+    paper_bgcolor:"#1b1b1b", plot_bgcolor:"#1b1b1b", font:{color:"#ddd"},
+    margin:{l:60,r:60,t:30,b:30}, legend:{orientation:"h"},
+    xaxis:{showgrid:false},
+    yaxis:{title:"RPM", range:[0,6000], autorange:true, showgrid:true},
+    yaxis2:{title:"Speed (mph)", range:[0,35], autorange:true, overlaying:"y", side:"right", showgrid:false}
+  };
+  const config = {displaylogo:false, responsive:true};
+
+  return Plotly.newPlot(RPM_SPEED_GD, traces, layout, config).then(() => {
+    rpmSpeedReady = true;
+    while (rpmBacklog.length) {
+      const [t, rpm, mph] = rpmBacklog.shift();
+      appendRpmSpeedPoint(t, rpm, mph);
+    }
+  });
+}
+
+function appendRpmSpeedPoint(t, rpm, speedMph, keep=1200) {
+  if (!rpmSpeedReady || !RPM_SPEED_GD || !RPM_SPEED_GD.data) {
+    rpmBacklog.push([t, rpm, speedMph]);
+    return;
+  }
+  const r = Number.isFinite(rpm) ? rpm : null;
+  const s = Number.isFinite(speedMph) ? speedMph : null;
+  Plotly.extendTraces(RPM_SPEED_GD, { x: [[t],[t]], y: [[r],[s]] }, [0,1], keep);
+}
+
+// ----- NEW: Angles chart: Compass / Heading / COG / Goal on one axis -----
+let ANGLES_GD = null;
+let anglesReady = false;
+const anglesBacklog = [];
+
+function makeAnglesChart() {
+  ANGLES_GD = document.getElementById("angles");
+  const traces = [
+    { name: "Compass", x: [], y: [], mode: "lines", connectgaps: true, line: {shape:"linear"} },
+    { name: "Heading", x: [], y: [], mode: "lines", connectgaps: true, line: {shape:"linear"} },
+    { name: "COG",     x: [], y: [], mode: "lines", connectgaps: true, line: {shape:"linear"} },
+    { name: "Goal",    x: [], y: [], mode: "lines", connectgaps: true, line: {shape:"linear"} },
+    { name: "Error",   x: [], y: [], mode: "lines", connectgaps: true, line: {shape:"linear"}, yaxis:"y2" },  // y2 (right)
+    { name: "Offset",  x: [], y: [], mode: "lines", connectgaps: true, line: {shape:"linear"}, yaxis:"y2" }   // y2 (right)
+  ];
+  const layout = {
+    paper_bgcolor:"#1b1b1b", plot_bgcolor:"#1b1b1b", font:{color:"#ddd"},
+    margin:{l:60,r:20,t:30,b:30}, legend:{orientation:"h"},
+    xaxis:{showgrid:false},
+    yaxis:{title:"Angle (deg)", range:[0,360], autorange:true, showgrid:true},
+    yaxis2:{
+      title:"Error (deg)",
+      range:[-180,180],
+      autorange:true,
+      overlaying:"y",
+      side:"right",
+      zeroline:true,
+      showgrid:false
+    }
+  };
+  const config = {displaylogo:false, responsive:true};
+
+  return Plotly.newPlot(ANGLES_GD, traces, layout, config).then(() => {
+    anglesReady = true;
+    while (anglesBacklog.length) {
+      const [t, compass, heading, cog, goal, headingErr, compCogDelta] = anglesBacklog.shift();
+      appendAnglesPoint(t, compass, heading, cog, goal, headingErr, compCogDelta);
+    }
+  });
+}
+
+function appendAnglesPoint(t, compass, heading, cog, goal, headingErr, compCogDelta, keep=1200) {
+  if (!anglesReady || !ANGLES_GD || !ANGLES_GD.data) {
+    anglesBacklog.push([t, compass, heading, cog, goal, headingErr, compCogDelta]);
+    return;
+  }
+  const c = Number.isFinite(compass) ?  compass : null;
+  const h = Number.isFinite(heading)      ? heading : null;
+  const g = Number.isFinite(cog)          ? cog     : null;
+  const l = Number.isFinite(goal)         ? goal    : null;
+  const e = Number.isFinite(headingErr)   ? headingErr : null;
+  const d = Number.isFinite(compCogDelta) ? compCogDelta : null;
+  const xupd = [[t],[t],[t],[t],[t],[t]];
+  const yupd = [[c],[h],[g],[l],[e],[d]];
+  Plotly.extendTraces(ANGLES_GD, { x: xupd, y: yupd }, [0,1,2,3,4,5], keep);
+}
+
+function angleWrap180(x) {
+  if (!Number.isFinite(x)) return null;
+  // wrap to (-180, 180]
+  return ((((x + 180) % 360) + 360) % 360) - 180;
+}
+function angleDiff(a, b) {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return angleWrap180(a - b);
+}
+
+
+// ----- Map setup (unchanged) -----
+let map = L.map('map', { zoomControl:true }).setView([43.85,-110.61], 12);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19}).addTo(map);
+let path = L.polyline([], {weight:3}).addTo(map);
+let marker = L.circleMarker([0,0], {radius:5}).addTo(map);
+
+// ----- One init + one WebSocket -----
+document.addEventListener("DOMContentLoaded", () => {
+  Promise.all([ makeRpmSpeedChart(), makeAnglesChart() ]).then(() => {
+    const ws = new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
+    ws.onmessage = (ev) => {
+      const d = JSON.parse(ev.data);
+      const t = new Date(d.ts*1000);
+
+      // RPM/Speed
+      const rpm = Number.isFinite(d.rpm) ? d.rpm : null;
+      let mph = null;
+      if (Number.isFinite(d.speed_mph))      mph = d.speed_mph;
+      else if (Number.isFinite(d.sog_mph))   mph = d.sog_mph;
+      else if (Number.isFinite(d.speed))     mph = d.speed;           // your decoder’s mph
+      else if (Number.isFinite(d.sog_mps))   mph = d.sog_mps*2.236936;
+      else if (Number.isFinite(d.speed_mps)) mph = d.speed_mps*2.236936;
+      appendRpmSpeedPoint(t, rpm, mph);
+
+      // Angles (left axis)
+      // const compCogDelta = angleDiff(d.compass_deg, d.cog_deg); // compass - COG (wrapped)
+      
+      // Angles: compass_deg, heading_deg, cog_deg (optional: heading_goal)
+      appendAnglesPoint(
+        t,
+        d.compass_deg,     // Compass
+        d.heading_deg,     // Heading (fused)
+        d.cog_deg,         // COG
+        d.heading_goal,
+        d.headingErr, 
+        d.compass_offset
+      );
+
+      // Map
+      if (Number.isFinite(d.lat) && Number.isFinite(d.lon)) {
+        const ll = [d.lat, d.lon];
+        path.addLatLng(ll);
+        marker.setLatLng(ll);
+        if (path.getLatLngs().length < 5) map.panTo(ll);
+      }
+    };
+  });
+});
+
+</script>
+</body>
+</html>

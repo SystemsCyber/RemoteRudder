@@ -1,0 +1,14 @@
+09:43:46 WARNING canlink    CAN open failed: interface can0 not present -- adapter unplugged or 'ip link set can0 up type can bitrate 250000' not run
+09:43:48 WARNING canlink    CAN open failed: interface can0 not present -- adapter unplugged or 'ip link set can0 up type can bitrate 250000' not run
+09:43:52 WARNING canlink    CAN open failed: interface can0 not present -- adapter unplugged or 'ip link set can0 up type can bitrate 250000' not run
+09:43:56 INFO    tornado.access 304 GET / (127.0.0.1) 11.64ms
+09:43:56 INFO    tornado.access 304 GET /static/js/socket.io.min.js (127.0.0.1) 7.51ms
+09:43:56 INFO    tornado.access 200 GET /static/js/compass.js (127.0.0.1) 1.60ms
+09:43:56 INFO    tornado.access 304 GET /static/images/RedPortArrowLabeled.png (127.0.0.1) 2.55ms
+09:43:56 INFO    tornado.access 304 GET /static/images/GreenStarboardArrowLabeled.png (127.0.0.1) 1.54ms
+09:43:56 INFO    tornado.access 304 GET /static/images/boat.png (127.0.0.1) 16.75ms
+09:43:56 INFO    tornado.access 101 GET /ws (127.0.0.1) 0.65ms
+09:44:00 INFO    tornado.access 304 GET / (127.0.0.1) 1.75ms
+09:44:00 INFO    tornado.access 101 GET /ws (127.0.0.1) 1.04ms
+09:44:00 WARNING canlink    CAN open failed: interface can0 not present -- adapter unplugged or 'ip link set can0 up type can bitrate 250000' not run
+09:44:15 WARNING canlink    CAN open failed: interface can0 not present -- adapter unplugged or 'ip link set can0 up type can bitrate 250000' not run

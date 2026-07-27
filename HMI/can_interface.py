@@ -5,21 +5,31 @@ import struct
 import time
 import sys
 import queue
+import os
+
+from can.io.canutils import CanutilsLogReader
+
+AUTOPILOT_CAN_ID = 0x18FF50E0
 
 # Setup logger
 logger = logging.getLogger('CAN')
-logger.setLevel(logging.DEBUG)
-logger.debug("CANinterface module loaded")
+logger.setLevel(logging.INFO)
+logger.info("CANinterface module loaded")
 
 class CANinterface:
-    def __init__(self, channel='can0', bitrate = 250000):
-        if 'win' in sys.platform:
-            device = 'pcan'           # The PCAN Drivers must be installed in Windows
-            channel = 'PCAN_USBBUS1'  # Update this to your specific channel
+    def __init__(self, channel='can0', bitrate = 250000, backend=None):
+        # backend: 'virtual', 'pcan', or 'socketcan' (None keeps old auto behavior)
+        if backend == "virtual":
+            device = "virtual"
+            channel = "vcan0"
+        elif 'win' in sys.platform:
+            device = 'pcan'
+            channel = 'PCAN_USBBUS1'
         else:
             device = 'socketcan'
-            channel = channel # Change this if there are more than 1 CAN adapter
-          # Set the bitrate to 2500000 for all NMEA2000
+            channel = channel
+         
+        # Set the bitrate to 2500000 for all NMEA2000
         try:
             self.bus = can.interface.Bus(channel=channel, interface=device, bitrate=bitrate, receive_own_messages=True)
             logger.info(f"CAN bus initialized at {bitrate} on {channel} with {device}")
@@ -48,6 +58,7 @@ class CANinterface:
         self.compass_heading = 0.0
         self.rudder_correction = 7.0
         self.boat_speed = 0.0
+        self.COG = 0
         self.heading_correction = 7.5
         self.averaging_window = 100  # Number of samples for averaging
         self.heading_history = queue.Queue(maxsize=100)
@@ -57,6 +68,43 @@ class CANinterface:
         self.shaft_value = self.max_steering_angle/2
         
         self.disable_servo()
+
+    async def replay_candump(self, path: str, speed: float = 1.0, loop: bool = False):
+        """
+        Replay a can-utils 'candump' log onto this bus.
+        - path: path to candump log (e.g., C:\\logs\\demo.log)
+        - speed: 1.0 = real time, 2.0 = 2x faster, 0.5 = half speed
+        - loop: repeat forever
+        """
+        logger.info(f"Starting replay_candump with file {path}")
+        while True:
+            reader = CanutilsLogReader(path)
+            t0_wall = time.time()
+            t0_log = None
+
+            for msg in reader:
+                if t0_log is None:
+                    # First timestamp in the log
+                    t0_log = msg.timestamp
+                    t0_wall = time.time()
+
+                # Target wall clock time for this frame
+                dt_log = (msg.timestamp - t0_log) / max(speed, 1e-6)
+                target = t0_wall + dt_log
+                delay = target - time.time()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+
+                try:
+                    # Re-send onto our bus so your read_loop + decoders see it
+                    if msg.arbitration_id != AUTOPILOT_CAN_ID:  # Skip autopilot status messages
+                        self.bus.send(msg)
+                except can.CanError as e:
+                    logger.error(f"Replay send failed: {e}")
+                    await asyncio.sleep(0.001)
+
+            if not loop:
+                break
 
     def add_listener(self, callback):
         self.listeners.append(callback)
@@ -175,21 +223,21 @@ class CANinterface:
             else:
                 COG_ref = "Null"
             COG_rad = struct.unpack('<H', msg.data[2:4])[0] / 10000.0  # COG in radians
-            COG = COG_rad * (180 / 3.14159)
+            self.COG = COG_rad * (180 / 3.14159)
             SOG_mps = struct.unpack('<H', msg.data[4:6])[0] / 100.0  # Speed over ground in m/s
             SOG_mph = SOG_mps * 2.236936  # Convert to mph
             self.boat_speed = SOG_mph  # Update boat speed
             if self.boat_speed > 10 and self.heading_correction is None:
-                self.COG_history.put(COG)
-            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} COG: {COG:.2f}, SOG: {SOG_mph:.2f} mph")
+                self.COG_history.put(self.COG)
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} COG: {self.COG:.2f}, SOG: {SOG_mph:.2f} mph")
             if self.boat_speed > 1:
-                return {"SOG": SOG_mph, "COG": COG}
+                return {"SOG": SOG_mph, "COG": self.COG}
 
         elif msg.arbitration_id == 0x09F8011C:  # GPS Position, Rapid Update. PGN 129025, 100ms update
-            lat = struct.unpack('<l', msg.data[0:4])[0] / 10000000 #degrees
-            lon = struct.unpack('<l', msg.data[4:8])[0] / 10000000 #degrees
-            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Lat: {lat:.6f}, Lon: {lon:.6f}")
-            return {"lat": lat, "lon": lon}
+            self.lat = struct.unpack('<l', msg.data[0:4])[0] / 10000000 #degrees
+            self.lon = struct.unpack('<l', msg.data[4:8])[0] / 10000000 #degrees
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Lat: {self.lat:.6f}, Lon: {self.lon:.6f}")
+            return {"lat": self.lat, "lon": self.lon}
         
         elif msg.arbitration_id == 0x18FEE81C:  #Vehicle Direction/Speed, PGN 65256, 1 second update
             compass = struct.unpack('<H', msg.data[0:2])[0] * 0.0078125 # degrees
@@ -202,37 +250,42 @@ class CANinterface:
         elif msg.arbitration_id == 0x0CF00400:  #electronic engine control 1, PGN 61444, 10ms update
             if (now - self.rpm_start_time) > self.GUI_TIMEOUT:
                 self.rpm_start_time = now
-                rpm = struct.unpack('<H', msg.data[3:5])[0] * 0.125 # RPM
-                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} rpm: {rpm:.0f}")
-                return {"rpm": round(rpm)}
+                self.rpm = struct.unpack('<H', msg.data[3:5])[0] * 0.125 # RPM
+                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} rpm: {self.rpm:.0f}")
+                return {"rpm": round(self.rpm)}
             else:
                 return None  # Skip processing if too soon
+        
         elif msg.arbitration_id == 0x09F112F8:  # Vessel Heading, PGN 127250 100ms update
             heading_raw = struct.unpack('<H', msg.data[1:3])[0] * 0.0001 * (180 / 3.14159)  # radians to degrees
-            heading = heading_raw + self.heading_correction
+            self.compass_offset = heading_raw - self.COG
+            if self.compass_offset < -180:
+                self.compass_offset += 360
+            elif self.compass_offset >= 180:
+                self.compass_offset -= 360
+            self.compass_heading = heading_raw + self.heading_correction
             if self.boat_speed < 1:
-                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {heading:.2f}")
-                return {"SOG": self.boat_speed, "COG": heading}
+                logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} heading: {self.compass_heading:.2f}")
+                return {"compass_heading": self.compass_heading}
 
         elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
             engaged = bool(msg.data[0] & 0x01)
             left = bool(msg.data[0] & 0x10)
             right = bool(msg.data[0] & 0x20)
-            #heading_goal = int(self.heading_goal * 10 + 0x8000) & 0xFFFF
-            heading_goal = (struct.unpack("<H", msg.data[1:3])[0] - 0x8000 )/ 10.0
-            if heading_goal < 0:
-                heading_goal += 360
-            elif heading_goal >= 360:
-                heading_goal -= 360
+            self.heading_goal = (struct.unpack("<H", msg.data[1:3])[0] - 0x8000 )/ 10.0
+            if self.heading_goal < 0:
+                self.heading_goal += 360
+            elif self.heading_goal >= 360:
+                self.heading_goal -= 360
             heading_error = (struct.unpack_from("<H", msg.data, 3)[0] - 0x8000 )/ 100.0
             rudder_goal = (struct.unpack_from("<H", msg.data, 5)[0] - 0x8000 )/ 100.0
             counter = msg.data[7]
-            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Autopilot engaged: {engaged}, heading_goal: {heading_goal:.2f}, heading_error: {heading_error:.2f}, rudder_goal: {rudder_goal:0.2f} ")
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Autopilot engaged: {engaged}, heading_goal: {self.heading_goal:.2f}, heading_error: {heading_error:.2f}, rudder_goal: {rudder_goal:0.2f} ")
             return {
                 "right_turn": right,
                 "left_turn": left,
                 "autopilot_engaged": engaged,
-                "heading_goal": heading_goal,
+                "heading_goal": self.heading_goal,
                 "heading_error": heading_error,
                 "rudder_goal": rudder_goal,
             }
