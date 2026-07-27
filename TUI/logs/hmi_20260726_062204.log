@@ -1,2 +1,0 @@
-06:22:04 WARNING canlink    CAN open failed: interface can0 not present -- adapter unplugged or 'ip link set can0 up type can bitrate 250000' not run
-06:22:06 WARNING canlink    CAN open failed: interface can0 not present -- adapter unplugged or 'ip link set can0 up type can bitrate 250000' not run
