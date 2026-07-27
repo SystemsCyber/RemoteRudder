@@ -369,3 +369,50 @@ class TestPollKeys:
 
     def test_resize_key_clears_screen(self, live_tui):
         live_tui._handle_key(curses.KEY_RESIZE)
+
+
+class TestClaimColumnsInCompactTable:
+    """The address-claim data (MFG, FUNCTION, IDENT) must show in the compact
+    source table, not only the 136-col wide view."""
+
+    def _render(self, cols=120):
+        import os, pty, curses, struct, fcntl, termios, time
+        m, s = pty.openpty()
+        fcntl.ioctl(s, termios.TIOCSWINSZ, struct.pack("HHHH", 30, cols, 0, 0))
+        os.environ["TERM"] = "xterm-256color"
+        si, so = os.dup(0), os.dup(1)
+        os.dup2(s, 0); os.dup2(s, 1)
+        from hmi_state import SystemState
+        from hmi_tui import TUI
+        scr = curses.initscr(); curses.noecho(); curses.cbreak()
+        try:
+            curses.resize_term(30, cols); scr.resize(30, cols)
+            st = SystemState()
+            t = TUI(st, lambda d: None, lambda v: None, lambda c: None)
+            t.start(scr)
+            st.link_up = True; st.backend = "socketcan"; st.channel = "can0"
+            st.bitrate = 250000
+            now = time.time()
+            st.register_source(0x09F112F8, "compass_F8", 3.0)
+            st.mark_source(0x09F112F8, now, data=bytes.fromhex("00A00F00FFFFFFFF"))
+            st.record_claim(0xF8, {"manufacturer": "Garmin",
+                                   "function": "Heading Sensor",
+                                   "identity": 1039212})
+            t.render()
+            rows, c = scr.getmaxyx()
+            return "\n".join(
+                scr.instr(y, 0).decode("utf-8", "replace") for y in range(rows))
+        finally:
+            curses.nocbreak(); curses.echo(); curses.endwin()
+            os.dup2(si, 0); os.dup2(so, 1)
+
+    def test_compact_table_has_claim_headers(self):
+        out = self._render(cols=120)
+        assert "MFG" in out
+        assert "FUNCTION" in out
+        assert "IDENT" in out
+
+    def test_compact_table_shows_claim_values(self):
+        out = self._render(cols=120)
+        assert "Garmin" in out          # manufacturer
+        assert "1039212" in out         # identity

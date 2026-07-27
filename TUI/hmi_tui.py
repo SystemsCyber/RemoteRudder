@@ -170,6 +170,19 @@ class TUI:
             self.flash("faults cleared")
         elif ch in (ord("a"), ord("A")):
             self.on_command("request_addresses")
+        elif ch == ord("\t"):
+            # TAB cycles which PID gain the +/- keys adjust.
+            order = ["Kp", "Ki", "Kd"]
+            cur = getattr(self, "_pid_selected", "Kp")
+            self._pid_selected = order[(order.index(cur) + 1) % len(order)]
+            self.flash(f"PID tuning: {self._pid_selected}")
+        elif ch in (ord("+"), ord("=")):
+            # Increase the selected gain (= is the unshifted +, easier to hit).
+            sel = getattr(self, "_pid_selected", "Kp")
+            self.on_command(f"pid_gain_up:{sel}")
+        elif ch == ord("-"):
+            sel = getattr(self, "_pid_selected", "Kp")
+            self.on_command(f"pid_gain_down:{sel}")
         elif ch in (ord("q"), ord("Q")):
             self.on_command("quit")
         elif ch == curses.KEY_RESIZE:
@@ -252,7 +265,18 @@ class TUI:
         if wide:
             self._draw_heading_panel(2, 0, 38)
             self._draw_rudder_panel(2, 39, 40)
-            self._draw_status_panel(2, 80, cols - 80)
+            right_x = 80
+            right_w = cols - right_x
+            # When the terminal is wide enough for both (right region >= 72),
+            # put the PID panel in the upper-right for tuning and STATUS beside
+            # it. Narrower than that (e.g. 120 cols), keep STATUS in the right
+            # region as before; the PID panel needs a wider terminal.
+            if right_w >= 72:
+                pid_w = 38
+                self._draw_pid_panel(2, right_x, pid_w)
+                self._draw_status_panel(2, right_x + pid_w, right_w - pid_w)
+            else:
+                self._draw_status_panel(2, right_x, right_w)
         else:
             self._draw_heading_panel(2, 0, 38)
             self._draw_rudder_panel(2, 39, cols - 39)
@@ -287,7 +311,11 @@ class TUI:
 
     def _draw_header(self, y: int, cols: int, now: float) -> None:
         st = self.state
-        title = " REMOTERUDDER HMI "
+        try:
+            from version import VERSION
+            title = f" REMOTERUDDER HMI v{VERSION} "
+        except Exception:
+            title = " REMOTERUDDER HMI "
         self._put(y, 0, " " * cols, curses.color_pair(C_HEAD))
         self._put(y, 1, title, curses.color_pair(C_HEAD) | curses.A_BOLD)
 
@@ -299,10 +327,10 @@ class TUI:
             link_txt = f"LINK DOWN  retry {nxt:.0f}s"
             link_attr = curses.color_pair(C_HEAD) | curses.A_BLINK | curses.A_BOLD
 
-        self._put(y, 20, link_txt, link_attr)
+        self._put(y, 27, link_txt, link_attr)
 
         rate_txt = f"{st.bitrate // 1000}k  RX {st.rx_total}  TX {st.tx_total}"
-        self._put(y, 46, rate_txt, curses.color_pair(C_HEAD))
+        self._put(y, 53, rate_txt, curses.color_pair(C_HEAD))
 
         clk = time.strftime("%H:%M:%S", time.localtime(now))
         self._put(y, cols - 10, clk, curses.color_pair(C_HEAD))
@@ -436,6 +464,70 @@ class TUI:
             self._put(y + 4, ix, " << TURN L ", curses.color_pair(C_WARN) | curses.A_BOLD)
         elif st.right_turn:
             self._put(y + 4, ix, " TURN R >> ", curses.color_pair(C_WARN) | curses.A_BOLD)
+
+    def _draw_pid_panel(self, y: int, x: int, w: int) -> None:
+        """
+        Wide-layout only. Live PID state: the three gains (with the selected one
+        highlighted for tuning) and the P/I/D term contributions in shaft
+        counts, plus the raw integral/derivative/error. Gains are adjusted with
+        the tuning keys (see the footer); the selected gain is chosen with TAB.
+        """
+        st = self.state
+        self._box(y, x, 9, w, "PID")
+
+        kp = st.signal_value("pid_kp")
+        ki = st.signal_value("pid_ki")
+        kd = st.signal_value("pid_kd")
+        p = st.signal_value("pid_p")
+        i = st.signal_value("pid_i")
+        d = st.signal_value("pid_d")
+        integral = st.signal_value("pid_integral")
+        deriv = st.signal_value("pid_derivative")
+        err = st.signal_value("heading_error")
+        if err is None:
+            err = self.state.heading_error
+
+        sel = getattr(self, "_pid_selected", "Kp")  # which gain the keys adjust
+
+        def gain_line(row, label, gain, term, key):
+            # highlight the selected gain
+            selected = (label == sel)
+            lab_attr = (curses.color_pair(C_ACCENT) | curses.A_BOLD if selected
+                        else curses.color_pair(C_DIM))
+            marker = ">" if selected else " "
+            self._put(y + row, x + 2, f"{marker}{label}", lab_attr)
+            self._put(y + row, x + 6, self._fmt(gain, "{:.2f}", 7),
+                      curses.color_pair(C_OK) | (curses.A_BOLD if selected else 0))
+            # the term contribution (shaft counts) this gain is producing now
+            self._put(y + row, x + 15, "term", curses.color_pair(C_DIM))
+            self._put(y + row, x + 20, self._fmt(term, "{:+.0f}", 7),
+                      curses.color_pair(C_OK))
+
+        # header row: column labels
+        self._put(y + 1, x + 6, "gain", curses.color_pair(C_DIM))
+        gain_line(2, "Kp", kp, p, "p")
+        gain_line(3, "Ki", ki, i, "i")
+        gain_line(4, "Kd", kd, d, "d")
+
+        # raw internals, useful when tuning
+        self._put(y + 5, x + 2, "err", curses.color_pair(C_DIM))
+        self._put(y + 5, x + 6, self._fmt(err, "{:+.1f}", 7), curses.color_pair(C_OK))
+        self._put(y + 5, x + 15, "intg", curses.color_pair(C_DIM))
+        self._put(y + 5, x + 20, self._fmt(integral, "{:+.0f}", 7),
+                  curses.color_pair(C_OK))
+        self._put(y + 6, x + 2, "der", curses.color_pair(C_DIM))
+        self._put(y + 6, x + 6, self._fmt(deriv, "{:+.2f}", 7),
+                  curses.color_pair(C_OK))
+        # sum of terms = commanded offset from center
+        total = None
+        if p is not None and i is not None and d is not None:
+            total = p + i + d
+        self._put(y + 6, x + 15, "sum", curses.color_pair(C_DIM))
+        self._put(y + 6, x + 20, self._fmt(total, "{:+.0f}", 7),
+                  curses.color_pair(C_ACCENT) | curses.A_BOLD)
+        # hint
+        self._put(y + 7, x + 2, "TAB sel  +/- adjust",
+                  curses.color_pair(C_DIM))
 
     def _draw_status_panel(self, y: int, x: int, w: int) -> None:
         """
@@ -574,9 +666,13 @@ class TUI:
                 self._put(row, x + 2, line[: w - 4], attr)
                 row += 1
         else:
-            self._put(row, x + 2,
-                      "ID          NAME                AGE     STATUS      COUNT",
-                      curses.color_pair(C_DIM))
+            # Compact table, now with the address-claim columns the operator
+            # wants visible without needing a 136-col terminal: MFG, FUNCTION,
+            # and IDENT (the unique serial). Columns truncate to fit the width;
+            # claim fields are blank until that source sends an address claim.
+            hdr = (f"{'ID':<11}{'NAME':<14}{'AGE':>7} {'STATUS':<7} "
+                   f"{'CNT':>5}  {'MFG':<12}{'FUNCTION':<14}{'IDENT':>9}")
+            self._put(row, x + 2, hdr[: w - 4], curses.color_pair(C_DIM))
             row += 1
             for s in srcs:
                 if row >= y + h - 1:
@@ -585,12 +681,24 @@ class TUI:
                 status = s.status(now)
                 attr = (curses.color_pair(C_OK) if status == "OK"
                         else curses.color_pair(C_ERR) | curses.A_BOLD)
-                age_txt = "  never" if age == float("inf") else f"{age:6.2f}s"
-                self._put(row, x + 2, f"0x{s.can_id:08X}", curses.color_pair(C_DIM))
-                self._put(row, x + 14, s.name[:18].ljust(18))
-                self._put(row, x + 34, age_txt, attr)
-                self._put(row, x + 43, status.ljust(10), attr)
-                self._put(row, x + 55, str(s.count), curses.color_pair(C_DIM))
+                age_txt = " never" if age == float("inf") else f"{age:6.2f}s"
+                cl = claims.get(s.can_id & 0xFF, {})
+                mfg = str(cl.get("manufacturer", ""))[:11]
+                func = str(cl.get("function", ""))[:13]
+                ident = str(cl.get("identity", ""))
+                # ID + NAME + AGE + STATUS + COUNT in the source color, then the
+                # claim columns. Keep it one _put so it truncates cleanly.
+                line = (
+                    f"{('0x%08X' % s.can_id):<11}"
+                    f"{s.name[:13]:<14}"
+                    f"{age_txt:>7} "
+                    f"{status:<7} "
+                    f"{s.count:>5}  "
+                    f"{mfg:<12}"
+                    f"{func:<14}"
+                    f"{ident:>9}"
+                )
+                self._put(row, x + 2, line[: w - 4], attr)
                 row += 1
 
     def _draw_faults(self, y: int, cols: int) -> None:
@@ -718,7 +826,7 @@ class TUI:
         # Reflects the current key map: arrows +-1, brackets +-10, down -5,
         # up snaps to heading, comma/dot are manual motor steps.
         keys = (
-            "<-/-> 1  [/] 10  ^ snap  ,/. step  "
+            "<-/-> 1  [/] 10  ^ snap  ,/. step  TAB/+/- pid  "
             "[e]ng [d]is [s]rv [c]lr [q]uit"
         )
         self._put(y, 0, " " * (cols - 1), curses.color_pair(C_HEAD))

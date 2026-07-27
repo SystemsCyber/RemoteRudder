@@ -1,0 +1,4 @@
+timestamp,rel_time,heading_goal,current_heading,heading_error,rudder_goal,rudder_actual,shaft_goal,shaft_actual,autopilot_engaged
+2026-07-25T11:12:28.831275,0.10432839393615723,0,,0.0,0,0,1500,0
+2026-07-25T11:12:28.932721,0.20578837394714355,0,,0.0,0,0,1500,0
+2026-07-25T11:12:29.033918,0.3069727420806885,6.89,6.89,-6.89,0,0,-206.8,0

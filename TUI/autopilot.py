@@ -61,6 +61,46 @@ class Autopilot():
         self._integral = 0.0
         self._prev_error = 0.0
         self._last_time = time.time()
+        # Reference heading for the disengaged goal-follows-heading logic. While
+        # disengaged the goal tracks the heading, but only updates on a
+        # meaningful change (> 1 deg) so the green goal line does not jitter on
+        # compass noise. This holds the last heading we synced the goal to.
+        # MUST be initialized here -- the run loop reads it every cycle.
+        self._disengaged_goal_ref = None
+        # Live PID term contributions (shaft counts), for the TUI PID panel.
+        self.p_term = 0.0
+        self.i_term = 0.0
+        self.d_term = 0.0
+        self.last_derivative = 0.0
+        self.last_error = 0.0
+        # Gain adjustment steps for the TUI tuning keys.
+        self.kp_step = 1.0
+        self.ki_step = 0.1
+        self.kd_step = 0.5
+
+        # Shaft command output limits (encoder counts). The PID output is
+        # clamped to the shaft's physical travel, so on a stationary boat the
+        # integral winds up and the shaft LIMITS OUT chasing an unreachable
+        # goal -- the intended behaviour.
+        self.shaft_out_min = 0.0
+        self.shaft_out_max = 2950.0
+        # Deadband on the sent shaft command (counts). Smaller than the old 100
+        # so gradual integral windup actually moves the shaft toward its limit
+        # instead of being swallowed. Still large enough to avoid CAN spam and
+        # servo chatter on tiny corrections.
+        self.shaft_deadband = 20.0
+
+        # Integral clamp. The integral is a TRUE accumulator (it winds up over
+        # time on a persistent error), but it is bounded so that when the boat
+        # finally gets steerage way and the error clears, the wound-up integral
+        # does not cause a huge overshoot. The bound is expressed in shaft
+        # counts of integral authority: Ki * integral is capped to +/- this.
+        # Chosen so the integral alone can drive the shaft across its full
+        # half-travel (~1475 counts) but not wildly beyond.
+        self.integral_authority_max = 1500.0  # counts contributed by Ki*integral
+        # -> integral magnitude cap = authority / Ki
+        self._integral_max = self.integral_authority_max / self.Ki if self.Ki else 0.0
+
         self.start_time = time.time()
         self.last_turn_time = time.time()
         
@@ -90,34 +130,26 @@ class Autopilot():
     def adjust_heading_goal(self,delta):
         logger.info(f'Adjust heading goal by {delta}.')
         try:
-            self.heading_goal += delta
-            if self.heading_goal < 0:
-                self.heading_goal += 360
-            elif self.heading_goal > 360:
-                self.heading_goal -= 360
-        except:
+            # Normalize with modulo, exactly as SystemState.set_goal does, so
+            # the two goal copies can never diverge. The old single-step
+            # if/elif left 360 as 360 (state stored 0), which made the goal
+            # appear to bounce between the set value and 360.
+            self.heading_goal = (self.heading_goal + delta) % 360.0
+        except Exception:
             logger.exception("Invalid heading change adjustment.")
 
     def set_heading_goal(self,value):
         logger.info(f'set heading goal to {value}.')
         try:
-            self.heading_goal = value
-            if self.heading_goal < 0:
-                self.heading_goal += 360
-            elif self.heading_goal > 360:
-                self.heading_goal -= 360
-        except:
+            self.heading_goal = float(value) % 360.0
+        except Exception:
             logger.exception("Invalid heading goal setting.")
-    
+
     def set_heading(self,value):
         logger.info(f'set heading value to {value}.')
         try:
-            self.current_heading = value
-            if self.current_heading < 0:
-                self.current_heading += 360
-            elif self.current_heading > 360:
-                self.current_heading -= 360
-        except:
+            self.current_heading = float(value) % 360.0
+        except Exception:
             logger.exception("Invalid heading goal setting.")
 
     def set_cog_lock(self, locked: bool):
@@ -233,14 +265,10 @@ class Autopilot():
                 self.last_turn_time = now
                 if self.left_turn_engaged:
                     self.right_turn_engaged = False
-                    self.heading_goal -= 1
-                    if self.heading_goal < 0:
-                        self.heading_goal += 360
+                    self.heading_goal = (self.heading_goal - 1) % 360.0
                 elif self.right_turn_engaged:
                     self.left_turn_engaged = False
-                    self.heading_goal += 1
-                    if self.heading_goal >= 360:
-                        self.heading_goal -= 360
+                    self.heading_goal = (self.heading_goal + 1) % 360.0
             
             if self.current_heading is None:
                 # No heading this cycle. Leave heading_error stale and skip the
@@ -262,12 +290,26 @@ class Autopilot():
             #if self.autopilot_engaged == True:
             if not self.autopilot_engaged_event.is_set():
                 # Track current heading while disengaged so engaging holds the
-                # present course. Keep the last goal if there is no heading
-                # right now rather than poisoning it with None.
+                # present course. But only update on a MEANINGFUL change (> 1
+                # deg) so the goal -- and the green goal line on the web wheel --
+                # does not jitter with the compass's natural ~0.5 deg noise.
+                # Holding steady between updates keeps the display calm.
                 if self.current_heading is not None:
-                    self.heading_goal = self.current_heading
+                    if (self._disengaged_goal_ref is None or
+                            abs(((self.current_heading - self._disengaged_goal_ref
+                                  + 180) % 360) - 180) > 1.0):
+                        self.heading_goal = self.current_heading
+                        self._disengaged_goal_ref = self.current_heading
                 self.error_list = []
                 self.time_list = []
+                # Clear the integral so a fresh engagement does not inherit
+                # windup accumulated while disengaged.
+                self._integral = 0.0
+            else:
+                # Engaged: the goal is the operator's commanded value; stop
+                # tracking heading. Reset the disengaged reference so the next
+                # disengage re-syncs cleanly.
+                self._disengaged_goal_ref = None
     
             if (now - self.last_shaft_adjust_time) > 1:
                 self.last_shaft_adjust_time = now
@@ -294,11 +336,25 @@ class Autopilot():
                     self._centered = False
                 elif engaged:
                     self._centered = False
-                    if abs(self.shaft_goal_mean - self.last_shaft_goal) > 100:  # deadband
-                        self.last_shaft_goal = self.shaft_goal_mean
-                        self.can_interface.set_shaft_goal(self.shaft_goal)
+                    # Send the SMOOTHED command (the mean we just computed), not
+                    # the instantaneous shaft_goal -- previously it compared the
+                    # mean but sent the instantaneous value, a mismatch.
+                    cmd = self.shaft_goal_mean
+                    at_limit = (cmd <= self.shaft_out_min + 1 or
+                                cmd >= self.shaft_out_max - 1)
+                    moved = abs(cmd - self.last_shaft_goal) > self.shaft_deadband
+                    # Send when the command moved past the (smaller) deadband OR
+                    # when it is pinned at a travel limit but not yet sent there.
+                    # The at-limit case is what makes the shaft reliably LIMIT
+                    # OUT as the integral winds up on a stationary boat: gradual
+                    # windup would otherwise never cross a large deadband.
+                    if moved or (at_limit and self.last_shaft_goal != cmd):
+                        self.last_shaft_goal = cmd
+                        self.can_interface.set_shaft_goal(cmd)
                         self.can_interface.send_shaft_goal()
-                        logger.debug(f"Sent command for shaft position of {self.can_interface.shaft_goal}")
+                        logger.debug(
+                            f"Sent shaft position {self.can_interface.shaft_goal:.0f}"
+                            f"{' (LIMIT)' if at_limit else ''}")
                 else:
                     self._centered = False
                     
@@ -323,46 +379,119 @@ class Autopilot():
         self.log_file.flush()    
 
     def compute_rudder_command(self):
+        """
+        PID controller. Returns a SHAFT command in encoder counts.
+
+        Terminology (these are distinct, from different sources):
+          * SHAFT -- the intermediate power shaft, geared via timing-belt
+            pulleys for torque. This is what we command (shaft_goal, counts
+            0..2950) and what the string potentiometer on the 'steering' node
+            (0x18F01D21) reports. It is NOT the rudder position.
+          * RUDDER angle -- the actual rudder, measured by a separate string
+            potentiometer reported by the 'rudder' node (0x19F10D13), in
+            degrees. It is feedback only; the PID does not command it directly.
+
+        The shaft drives the rudder through the gearing, so commanding the shaft
+        moves the rudder, but they are measured independently.
+
+        Integral behaviour: a TRUE accumulator. On a stationary boat chasing a
+        goal it cannot reach (no steerage way), the integral winds up every
+        cycle and the output clamps to the shaft's travel -- the shaft LIMITS
+        OUT. The integral is bounded (integral clamp) so overshoot stays sane
+        when the boat finally gets way on and the error clears.
+        """
         current_time = time.time()
         dt = current_time - self._last_time
         self._last_time = current_time
-        
+        # Guard against a bad dt (first call, clock jump, paused thread).
+        if dt <= 0 or dt > 5.0:
+            dt = 0.0
+
         error = self.heading_error
-        
+
+        # Keep a short error/time history for the derivative only. The integral
+        # is now a persistent accumulator, not a windowed sum, so it is no
+        # longer derived from this list.
         self.time_list.append(current_time)
         self.error_list.append(error)
-        if len(self.error_list) <= 1:
-            return self.Kp * error
-
         if len(self.error_list) > self.error_list_length:
             self.time_list.pop(0)
             self.error_list.pop(0)
-        
-        self._integral = 0
-        if len(self.time_list) > 1 and len(self.error_list) > 1:
-            for i in range(1, len(self.time_list)):
-                dt = self.time_list[i] - self.time_list[i-1]
-                avg_val = (self.error_list[i] + self.error_list[i-1]) / 2
-                self._integral += avg_val * dt
 
-        derivative = self.compute_slope(self.time_list[-4:], self.error_list[-4:])
+        # --- TRUE ACCUMULATING INTEGRAL ---
+        # Add this cycle's error*dt to the running integral. On a stationary
+        # boat with a persistent error (goal it cannot reach without steerage
+        # way), this grows every cycle and drives the shaft toward its limit --
+        # the operator's expected behaviour. It is clamped so that when the boat
+        # finally moves and the error clears, the wound-up integral does not
+        # cause a huge overshoot.
+        self._integral += error * dt
+        if self._integral_max > 0:
+            if self._integral > self._integral_max:
+                self._integral = self._integral_max
+            elif self._integral < -self._integral_max:
+                self._integral = -self._integral_max
 
-        # derivative = (error - self._prev_error) / dt if dt > 0 else 0.0
+        # Derivative from the recent slope (smoother than a single-step diff).
+        if len(self.time_list) >= 2:
+            derivative = self.compute_slope(self.time_list[-4:], self.error_list[-4:])
+        else:
+            derivative = 0.0
         self._prev_error = error
 
         shaft_command = (
             self.Kp * error +
             self.Ki * self._integral +
-            self.Kd * derivative + 
+            self.Kd * derivative +
             self.shaft_center
         )
-        if shaft_command < 0:
-            shaft_command = 0
-        elif shaft_command > 2950:
-            shaft_command = 2950
-        logger.debug(f"Compute: dt: {dt:.6f}, Kp: {self.Kp}, error: {error:.3f}, Ki: {self.Ki}, integral: {self._integral:.1f}, Kd: {self.Kd}, derivative: {derivative:.3f}, shaft_command: {shaft_command:.1f}")
 
+        # Store the individual term contributions (in shaft counts) so the TUI
+        # PID panel can show them live. These are the actual P/I/D outputs, not
+        # just the gains -- what the operator needs to tune by.
+        self.p_term = self.Kp * error
+        self.i_term = self.Ki * self._integral
+        self.d_term = self.Kd * derivative
+        self.last_derivative = derivative
+        self.last_error = error
+
+        # Clamp the OUTPUT to the shaft's physical travel. The integral keeps
+        # accumulating (up to its own clamp) even while the output is pinned, so
+        # the shaft sits AT its limit while the goal is unreachable -- it "limits
+        # out", exactly as expected on a stationary boat.
+        if shaft_command < self.shaft_out_min:
+            shaft_command = self.shaft_out_min
+        elif shaft_command > self.shaft_out_max:
+            shaft_command = self.shaft_out_max
+
+        logger.debug(
+            f"Compute: dt={dt:.4f} Kp={self.Kp} err={error:.2f} "
+            f"Ki={self.Ki} integral={self._integral:.1f} "
+            f"(Ki*I={self.Ki*self._integral:.0f}) Kd={self.Kd} "
+            f"deriv={derivative:.3f} shaft_cmd={shaft_command:.1f}"
+        )
         return shaft_command
+
+    def reset_integral(self):
+        """Clear the integral accumulator. Called on disengage so a fresh
+        engagement does not inherit stale windup."""
+        self._integral = 0.0
+
+    def adjust_gain(self, which: str, delta: float) -> None:
+        """
+        Nudge a PID gain by delta (for the TUI tuning keys). Keeps gains
+        non-negative and, when Ki changes, recomputes the integral clamp so the
+        integral authority stays consistent.
+        """
+        if which == "Kp":
+            self.Kp = max(0.0, self.Kp + delta)
+        elif which == "Ki":
+            self.Ki = max(0.0, self.Ki + delta)
+            self._integral_max = (self.integral_authority_max / self.Ki
+                                  if self.Ki else 0.0)
+        elif which == "Kd":
+            self.Kd = max(0.0, self.Kd + delta)
+        logger.info(f"PID gain {which} -> {getattr(self, which):.3f}")
 
     def map_steering_to_rudder(self, shaft_angle):
         """

@@ -59,6 +59,14 @@ COG_PRIMARY_SPEED_MPH = 4.0
 # band; widen it by lowering this if transitions still occur.
 COG_PRIMARY_DROP_MPH = 3.0
 
+# The EKF's heading is preferred over the priority chain only when its sigma is
+# below this. Above it, the EKF is not confident enough (e.g. compass-only on a
+# parked boat, no COG to pin it) and derive_fused falls through to the compass/
+# COG priority chain -- which is what lets the autopilot engage on a solid
+# compass in the parking lot. Aligned with the engage threshold so "EKF used"
+# implies "engageable".
+EKF_TRUST_SIGMA = 6.0
+
 # decoded-dict key -> signal name
 KEY_TO_SIGNAL = {
     "steering_angle": "steering_angle",
@@ -71,7 +79,11 @@ KEY_TO_SIGNAL = {
     "SOG": "sog",
     "COG": "cog",
     "compass_heading": "compass_heading",
-    "compass": "compass_heading",
+    # NOTE: intentionally NO "compass" -> "compass_heading" alias. The GPS
+    # vehicle-direction decode used to return {"compass": ...} (a stationary-GPS
+    # course), which clobbered the real compass heading and made the display
+    # bounce. Vehicle direction now has its own key below.
+    "gps_vehicle_dir": "gps_vehicle_dir",
     "pitch": "pitch",
     "roll": "roll",
     "compass_offset": "compass_offset",
@@ -134,6 +146,7 @@ class Bridge:
         # unless an independent gyro is available (then 3-state pays off).
         self._ekf = None
         self._ekf_last_t = None
+        self._ekf_last_meas_t = None  # when the EKF last had a real reference
         self._compass_prev = None  # (value, t) for the compass derivative
         self.use_ekf = False
         # COG-primary hysteresis state: True once engaged at
@@ -184,8 +197,8 @@ class Bridge:
                 self.monitor.add_heading(float(data["heading_value"]))
         elif "compass_heading" in data and data["compass_heading"] is not None:
             self.monitor.add_heading(float(data["compass_heading"]))
-        elif "compass" in data and data["compass"] is not None:
-            self.monitor.add_heading(float(data["compass"]))
+        # (No "compass" fallback: that key was the GPS vehicle-direction course,
+        # not a heading -- feeding it here polluted the heading noise stats.)
 
         if data.get("pitch") is not None:
             self.monitor.add_pitch(float(data["pitch"]))
@@ -246,15 +259,42 @@ class Bridge:
         st = self.state
         now = _t.time()
 
-        cog = st.signal_value("cog")
-        comp = st.signal_value("compass_heading")
-        node_yaw = st.signal_value("node_yaw_rate")
+        # Read heading references with FRESHNESS, not just last value.
+        # signal_value returns the last value even when stale, so on a CAN drop
+        # the compass/COG would appear frozen-but-present and keep driving the
+        # filter. Use the Signal's validity so a stale reference is treated as
+        # absent -- the filter then coasts (predict-only, sigma grows) and stops
+        # publishing rather than locking onto a frozen heading.
+        def _fresh(name):
+            sig = st.get_signal(name)
+            if sig is None or sig.value is None or not sig.is_valid(now):
+                return None
+            return sig.value
+
+        cog = _fresh("cog")
+        comp = _fresh("compass_heading")
+        node_yaw = _fresh("node_yaw_rate")
         sog = st.signal_value("sog") or 0.0
+
+        # Do not run the EKF on nothing. If there is no absolute heading
+        # reference available at all (no compass, no COG) -- e.g. CAN is down --
+        # the filter has nothing to seed from or correct against, so leave it
+        # uninitialized and publish no ekf_heading. This prevents a blind filter
+        # from feeding a fabricated heading (it used to seed to 0.0 and publish
+        # north) into the control loop while CAN is down. When a real reference
+        # returns, the filter builds fresh from it.
+        have_reference = (comp is not None) or (cog is not None)
+        if self._ekf is None and not have_reference:
+            # ensure any stale published values are cleared while blind
+            st.set_signal("ekf_heading", None)
+            st.set_signal("ekf_sigma", None)
+            self._ekf_last_t = now
+            return
 
         # Lazily construct. 3-state only if an independent gyro is available --
         # otherwise the bias is unobservable and the 2-state is better.
         if self._ekf is None:
-            seed = cog if cog is not None else (comp if comp is not None else 0.0)
+            seed = cog if cog is not None else comp
             self._ekf = (HeadingEKF3(heading0=seed) if node_yaw is not None
                          else HeadingEKF2(heading0=seed))
             self._ekf_last_t = now
@@ -264,6 +304,20 @@ class Bridge:
         if dt <= 0:
             dt = 0.1
         self._ekf.predict(dt)
+
+        # Track when we last had a real measurement. If the reference has been
+        # gone too long (CAN down mid-run), stop publishing: the coasted
+        # estimate is not trustworthy and should not appear confident on the
+        # display or feed the loop. derive_fused already ignores sigma > 15, but
+        # clearing the signal is cleaner and matches "no signal" on the TUI.
+        if have_reference:
+            self._ekf_last_meas_t = now
+        coasted = now - getattr(self, "_ekf_last_meas_t", now)
+        if coasted > 3.0:
+            st.set_signal("ekf_heading", None)
+            st.set_signal("ekf_sigma", self._ekf.sigma, now)  # keep sigma for the TUI
+            st.set_signal("ekf_yaw_rate", None)
+            return
 
         # Compass yaw-rate measurement (the operator's idea): derivative of
         # successive compass headings, gated so an electrical spike does not
@@ -277,6 +331,22 @@ class Bridge:
                     if abs(rate) <= YAW_RATE_MAX_DPS:
                         self._ekf.update_yaw_rate(rate, R=1.0)
             self._compass_prev = (comp, now)
+
+            # Compass heading as an ABSOLUTE reference. The compass is biased
+            # (declination/iron), so how much we trust it for absolute heading
+            # depends on whether COG -- the unbiased track reference -- is also
+            # available:
+            #   * COG present (moving): trust the compass absolute only weakly
+            #     (R=300, ~17 deg) so COG dominates the absolute heading and the
+            #     compass bias is ignored, while its DERIVATIVE still smooths
+            #     yaw. This preserves the fishing behaviour (track, not heading).
+            #   * COG absent (parked): the compass is the ONLY absolute
+            #     reference, so trust it enough (R=25, ~5 deg) to pin the filter
+            #     and let sigma converge -- otherwise a parked boat never gets a
+            #     low-enough sigma to engage, despite a rock-solid compass.
+            cog_present = cog is not None and sog >= COG_MIN_SPEED_MPH
+            comp_R = 2000.0 if cog_present else 25.0
+            self._ekf.update_heading(comp, R=comp_R)
 
         # Independent gyro (node/24xd), unbiased: separates the compass scale
         # bias on the 3-state.
@@ -336,23 +406,30 @@ class Bridge:
                 self.monitor.set_filter_sigma(ns)
             return
 
-        # Priority 1.5: the heading EKF, when enabled and confident. It runs
-        # alongside the priority chain (does not replace it): if use_ekf is off,
-        # or the EKF has diverged (high sigma), we fall straight through to the
-        # COG/compass logic below. The EKF gives the smoothest heading and a
-        # good yaw rate, so when it is healthy it is preferred over raw COG.
+        # Priority 1.5: the heading EKF, but ONLY when it is genuinely
+        # confident. The EKF runs alongside the priority chain, never replaces
+        # it. Its sigma must be low enough to mean it has real absolute fixes --
+        # not merely coasting on the compass derivative. A compass-only EKF on a
+        # parked boat sits around 10-12 deg sigma (no COG to pin it), which is
+        # NOT good enough to prefer over the rock-solid compass itself. So the
+        # gate is EKF_TRUST_SIGMA (6 deg), well below the old 15: above that we
+        # fall straight through to the priority chain, which uses the compass
+        # directly and lets the autopilot engage. This is the "if sigma is too
+        # high, revert to the priority sources" behaviour -- the compass is
+        # good and solid, so the system should engage on it in the parking lot.
         if self.use_ekf:
             ekf_h = st.get_signal("ekf_heading")
             ekf_sig = st.signal_value("ekf_sigma")
             if (ekf_h is not None and ekf_h.is_valid()
-                    and ekf_sig is not None and ekf_sig < 15.0):
+                    and ekf_sig is not None and ekf_sig < EKF_TRUST_SIGMA):
                 st.set_signal("fused_heading", ekf_h.value, ekf_h.last_rx)
                 st.heading_source = "EKF"
-                # The EKF only produces a meaningful heading with some motion or
-                # a valid compass; treat it as a lock like the node.
                 st.cog_lock = True
                 self.monitor.set_filter_sigma(ekf_sig)
                 return
+            # EKF not confident enough -> fall through to the priority chain
+            # below (compass/COG), which is exactly what we want on a parked
+            # boat with a good compass.
 
         cog_ok = cog is not None and cog.is_valid() and sog >= COG_MIN_SPEED_MPH
         comp_ok = comp is not None and comp.is_valid()

@@ -28,7 +28,7 @@
   let leftTurnState = false;
 
   window.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded: compass.js');
+    console.log('DOMContentLoaded: compass.js  [RemoteRudder HMI compass.js v0.9.13 — labels top-layer, graphs wired]');
 
     const engineSpeed = document.getElementById('EngineSpeed');
     const servoBtn = document.getElementById("servoToggleBtn");
@@ -39,12 +39,24 @@
     const leftTurnBtn = document.getElementById("LeftTurn");
     const right_turn_message = document.getElementById("right_turn_message");
     const left_turn_message = document.getElementById("left_turn_message");
-    
 
-    const socket = new WebSocket(
-        (location.protocol === 'https:' ? 'wss://' : 'ws://') +
-        location.host + '/ws'
-    );
+    // Graphs button -> the live plot page (/plot). Previously the button had no
+    // handler, so clicking it did nothing.
+    const graphsBtn = document.getElementById("graphsBtn");
+    if (graphsBtn) {
+      graphsBtn.addEventListener("click", () => { window.location.href = "/plot"; });
+    }
+
+
+    // Derive the socket URL from the page we were served from. Hardcoding
+    // ':5000' meant that running the server on any other port (app_tui.py
+    // --port) left the page connecting to nothing: no error banner, just a
+    // dashboard that never updates. Using location.port also makes the page
+    // work behind a reverse proxy, and wss:// keeps it working if the page
+    // is ever served over HTTPS.
+    const wsProto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const wsPort = location.port ? ':' + location.port : '';
+    const socket = new WebSocket(wsProto + location.hostname + wsPort + '/ws');
   
     socket.onopen = function () {
         console.log("WebSocket from compass.js connected.");
@@ -140,16 +152,33 @@
         
       }
   
-      if ('COG' in data && 'SOG' in data) {
+      // Heading display: use the real fused/compass heading, NOT COG. When
+      // parked there is no COG, so keying the Heading readout (and the goal
+      // dial math, which adds `heading`) off COG left the heading blank and
+      // made the goal bounce. Prefer fused, then compass, then COG as a last
+      // resort. These come from the telemetry snapshot (heading_deg =
+      // fused_heading, compass_deg = the wall compass).
+      if ('heading_deg' in data && data.heading_deg !== null) {
+        heading = data.heading_deg;
+        heading_string = fmtDeg(heading, 0);
+      } else if ('compass_deg' in data && data.compass_deg !== null) {
+        heading = data.compass_deg;
+        heading_string = fmtDeg(heading, 0);
+      } else if ('COG' in data && data.COG !== null) {
+        heading = data.COG;
+        heading_string = fmtDeg(heading, 0);
+      }
+
+      if ('SOG' in data && data.SOG !== null) {
         try {
-          heading = data.COG;
-          heading_string = fmtDeg(heading, 0);
           speed = data.SOG;
           speed_string = fmtSpd(speed, 1);
         } catch (error) {
-          heading_string = 'ERROR';
           speed_string = 'ERROR';
         }
+      } else if ('sog_mph' in data && data.sog_mph !== null) {
+        speed = data.sog_mph;
+        speed_string = fmtSpd(speed, 1);
       }
 
       if ('heading_goal' in data) {
@@ -503,6 +532,25 @@
     drawRing(ctx, R);
     ctx.restore();
 
+    // Cardinal letters drawn in an UNROTATED frame so the glyphs stay upright,
+    // with their POSITION computed for the current heading (heading-up card):
+    // a bearing b sits at screen angle (b - heading), so facing south S is at
+    // the top/bow. Kept separate from drawRing (which runs inside the ring's
+    // rotate()) precisely so the letters do not get double-rotated.
+    ctx.save();
+    ctx.translate(R, R);
+    ctx.fillStyle    = '#222';
+    ctx.font         = '48px sans-serif';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach(([ltr, bearing]) => {
+      const scr = (bearing - heading) * Math.PI / 180;  // screen angle from up
+      const x =  (R - 70) * Math.sin(scr);
+      const y = -(R - 70) * Math.cos(scr);
+      ctx.fillText(ltr, x, y);
+    });
+    ctx.restore();
+
     // ── draw static boat + moving rudder ─────────
     ctx.save();
     ctx.translate(R, R);
@@ -543,73 +591,6 @@
     
     ctx.drawImage(boat, -bw / 2, -bh / 2, bw, bh);
 
-    /* Draw Labels  */
-    ctx.fillStyle   = 'rgb(12, 0, 249)'
-    
-    ctx.font        = '96px monospace'
-    ctx.textAlign   = 'left';              // anchor on the right end
-    ctx.textBaseline = 'top';               // anchor at the top edge
-    ctx.fillText(heading_string,  // e.g. “347.6°”
-                bw / 4 ,               // 8 px left of the boat’s left edge
-                -bh / 4);                  // flush with the boat’s top
-    
-    ctx.font        = '50px monospace'
-    ctx.textBaseline = 'bottom';               // anchor at the top edge
-    ctx.fillText("Heading",  // e.g. “347.6°”
-                bw / 4 ,               // 8 px left of the boat’s left edge
-                -bh / 4);                  // flush with the boat’s top
-
-    ctx.font        = '96px monospace'
-    ctx.textAlign   = 'left';              // anchor on the right end
-    ctx.textBaseline = 'top';               // anchor at the top edge
-    ctx.fillText(speed_string,  // e.g. “347.6°”
-                bw / 4 ,               // 8 px left of the boat’s left edge
-                bh / 4);                  // flush with the boat’s top
-    
-    ctx.font        = '50px monospace'
-    ctx.textBaseline = 'bottom';               // anchor at the top edge
-    ctx.fillText("Speed",  // e.g. “347.6°”
-                bw / 4 ,               // 8 px left of the boat’s left edge
-                bh / 4);                  // flush with the boat’s top
-    
-    ctx.font        = '96px monospace'
-    ctx.textAlign   = 'right';              // anchor on the right end
-    ctx.textBaseline = 'top';               // anchor at the top edge
-    ctx.fillText(rudder_string,  // e.g. “347.6°”
-                -bw / 4 ,               // 8 px left of the boat’s left edge
-                bh / 4);                  // flush with the boat’s top
-
-    ctx.font        = '50px monospace'
-    ctx.textBaseline = 'bottom';               // anchor at the top edge
-    ctx.fillText("Rudder",  // e.g. “347.6°”
-                -bw / 4 ,               // 8 px left of the boat’s left edge
-                bh / 4);                  // flush with the boat’s top
-
-    ctx.font        = '96px monospace'
-    ctx.textAlign   = 'right';              // anchor on the right end
-    ctx.textBaseline = 'top';               // anchor at the top edge
-    ctx.fillText(heading_goal_string,  // e.g. “347.6°”
-                -bw / 4 ,               // 8 px left of the boat’s left edge
-                -bh / 4);                  // flush with the boat’s top
-                
-    ctx.font        = '50px monospace'
-    ctx.textBaseline = 'bottom';               // anchor at the top edge
-    ctx.fillText("Goal   ",  // e.g. “347.6°”
-                -bw / 4 ,               // 8 px left of the boat’s left edge
-                -bh / 4);                  // flush with the boat’s top
-
-    ctx.font        = '50px monospace'
-    ctx.textBaseline = 'bottom';               // anchor at the top edge
-    ctx.fillText(rudder_min_string,  // e.g. “347.6°”
-                -.4*bw,               // 8 px left of the boat’s left edge
-                0.5*bh);                  // flush with the boat’s top
-
-    ctx.textAlign   = 'left';
-    ctx.fillText(rudder_max_string,  // e.g. “347.6°”
-                .4*bw,               // 8 px left of the boat’s left edge
-                0.5*bh);                  // flush with the boat’s top
-    /* ───────────────────────── */
-
     ctx.restore();
     
     ctx.save();
@@ -623,6 +604,54 @@
     ctx.moveTo(0, -R)
     ctx.lineTo(0, R);
     ctx.stroke();
+    ctx.restore();
+
+    // ── VALUE LABELS: drawn LAST so they are the top layer ──────────────
+    // Heading / Speed / Rudder / Goal readouts on the compass face. Drawn here,
+    // after the ring, boat, rudder and crosshair, so nothing can cover them
+    // (previously they were drawn right after the boat sprite and could be
+    // obscured). Positioned in the four quadrants around the boat.
+    ctx.save();
+    ctx.translate(R, R);
+    const _scale = 0.4;
+    const _bw = canvas.width * _scale;
+    const _bh = boat.complete && boat.height
+                ? boat.height * (_bw / boat.width)
+                : _bw * 2;               // fallback ratio if the sprite is not ready
+    ctx.fillStyle = 'rgb(12, 0, 249)';
+
+    // top-right: Heading
+    ctx.textAlign = 'left';
+    ctx.font = '96px monospace'; ctx.textBaseline = 'top';
+    ctx.fillText(heading_string, _bw / 4, -_bh / 4);
+    ctx.font = '50px monospace'; ctx.textBaseline = 'bottom';
+    ctx.fillText("Heading", _bw / 4, -_bh / 4);
+
+    // bottom-right: Speed
+    ctx.font = '96px monospace'; ctx.textBaseline = 'top';
+    ctx.fillText(speed_string, _bw / 4, _bh / 4);
+    ctx.font = '50px monospace'; ctx.textBaseline = 'bottom';
+    ctx.fillText("Speed", _bw / 4, _bh / 4);
+
+    // bottom-left: Rudder
+    ctx.textAlign = 'right';
+    ctx.font = '96px monospace'; ctx.textBaseline = 'top';
+    ctx.fillText(rudder_string, -_bw / 4, _bh / 4);
+    ctx.font = '50px monospace'; ctx.textBaseline = 'bottom';
+    ctx.fillText("Rudder", -_bw / 4, _bh / 4);
+
+    // top-left: Goal
+    ctx.font = '96px monospace'; ctx.textBaseline = 'top';
+    ctx.fillText(heading_goal_string, -_bw / 4, -_bh / 4);
+    ctx.font = '50px monospace'; ctx.textBaseline = 'bottom';
+    ctx.fillText("Goal   ", -_bw / 4, -_bh / 4);
+
+    // rudder min/max near the stern
+    ctx.font = '50px monospace'; ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'right';
+    ctx.fillText(rudder_min_string, -0.4 * _bw, 0.5 * _bh);
+    ctx.textAlign = 'left';
+    ctx.fillText(rudder_max_string, 0.4 * _bw, 0.5 * _bh);
     ctx.restore();
 
     requestAnimationFrame(draw);
@@ -672,25 +701,10 @@
       ctx.stroke();
     }
 
-    // cardinal letters — always upright
-    ctx.fillStyle   = '#222';
-    ctx.font        = '48px sans-serif';
-    ctx.textAlign   = 'center';
-    ctx.textBaseline= 'middle';
-
-    ['N','E','S','W'].forEach((ltr, i) => {
-      const a  = i * Math.PI / 2;                    // 0, 90, 180, 270°
-      const x  = (R - 70) * Math.sin(a);
-      const y  = -(R - 70) * Math.cos(a);
-
-      ctx.save();                                    // isolate transform
-      ctx.translate(x, y);                           // move to label position
-      ctx.rotate(heading * Math.PI / 180);           // cancel ring rotation
-      ctx.fillText(ltr, 0, 0);                       // draw upright
-      ctx.restore();
-    });
-
+    // (Cardinal letters are drawn separately in draw(), in an unrotated frame,
+    // so their glyphs stay upright while their position tracks the heading.)
   }
+
   // kick-off after boat sprite loads
   boat.onload = draw;
   

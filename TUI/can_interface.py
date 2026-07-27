@@ -264,8 +264,15 @@ class CANinterface:
             # monitor meaningless (the scatter was right, the value was not).
             pitch = struct.unpack('<H', msg.data[4:6])[0] * 0.0078125 - 200.0  # degrees
             altitude = struct.unpack('<H', msg.data[6:8])[0] * 0.125 * 3.28084  # meters to ft
-            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} Compass: {compass:.2f}, Speed: {speed:.2f} mph, Pitch: {pitch:.2f}°, Altitude: {altitude:.2f} ft")
-            return {"speed": speed, "compass": compass, "pitch": pitch, "altitude": altitude}
+            logger.debug(f"{msg.arbitration_id:08X} {msg.data.hex()} VehicleDir: {compass:.2f}, Speed: {speed:.2f} mph, Pitch: {pitch:.2f}°, Altitude: {altitude:.2f} ft")
+            # This is the GPS vehicle-DIRECTION (a course), NOT a compass
+            # heading. Returning it as "compass" routed it into the
+            # compass_heading state signal, where it overwrote the real wall
+            # compass with a stale stationary-GPS course (~39 deg while the
+            # compass read ~180 south) -- which made the displayed heading
+            # bounce. Return it under its own key so it never touches the
+            # compass heading. Pitch/altitude still come through.
+            return {"speed": speed, "gps_vehicle_dir": compass, "pitch": pitch, "altitude": altitude}
 
         elif msg.arbitration_id == 0x0CF00400:  #electronic engine control 1, PGN 61444, 10ms update
             if (now - self.rpm_start_time) > self.GUI_TIMEOUT:
@@ -294,12 +301,18 @@ class CANinterface:
             elif self.compass_offset >= 180:
                 self.compass_offset -= 360
             self.compass_heading = heading_raw + self.heading_correction
-            if self.boat_speed < 1:
-                logger.debug(f"{msg.arbitration_id:08X} SA={sa:02X} {msg.data.hex()} heading: {self.compass_heading:.2f}")
-                # heading_sa lets the bridge route per-source; compass_heading
-                # kept for backward compatibility with existing consumers.
-                return {"compass_heading": self.compass_heading, "heading_sa": sa,
-                        "heading_value": self.compass_heading}
+            # Report heading at ALL speeds. The old code only returned it when
+            # boat_speed < 1, which meant the compass never updated the fusion
+            # while moving -- the fishing/COG-primary logic in the bridge is what
+            # decides WHEN to use heading vs COG, so the decoder should always
+            # supply it. (Previously the vehicle-direction message masked this
+            # by writing compass_heading when moving, which was itself the
+            # display-bounce bug.)
+            logger.debug(f"{msg.arbitration_id:08X} SA={sa:02X} {msg.data.hex()} heading: {self.compass_heading:.2f}")
+            # heading_sa lets the bridge route per-source; compass_heading kept
+            # for backward compatibility with existing consumers.
+            return {"compass_heading": self.compass_heading, "heading_sa": sa,
+                    "heading_value": self.compass_heading}
 
         elif msg.arbitration_id == 0x18FF50E0: #Autopilot status
             engaged = bool(msg.data[0] & 0x01)

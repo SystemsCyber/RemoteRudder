@@ -52,6 +52,7 @@ import tornado.websocket
 
 from can_interface import CANinterface
 from autopilot import Autopilot
+from can_recorder import FilteredCanRecorder
 from hmi_bridge import Bridge
 from j1939_name import (
     REQUEST_ADDRESS_CLAIM_DATA,
@@ -109,6 +110,11 @@ def setup_logging(use_tui: bool, level: str = "INFO") -> None:
 clients: Set["WSHandler"] = set()
 STATE = SystemState()
 
+# Filtered CAN recorder: logs only the messages the HMI uses (~17% of the bus),
+# so an on-water capture is small and shareable. Same recorder app.py had; kept
+# here so app_tui.py is the single complete app (web + TUI + recorder).
+RECORDER = FilteredCanRecorder(directory="logs", channel="can0")
+
 
 class MainHandler(tornado.web.RequestHandler):
     def get(self):
@@ -118,6 +124,23 @@ class MainHandler(tornado.web.RequestHandler):
 class PlotHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("plot_data.html")
+
+
+class LogDownloadHandler(tornado.web.RequestHandler):
+    """Serve the current filtered CAN log for download (path shown on /plot)."""
+
+    def get(self):
+        stats = RECORDER.stats()
+        path = stats.get("path")
+        if not path or not os.path.exists(path):
+            self.set_status(404)
+            self.write("No log yet")
+            return
+        self.set_header("Content-Type", "application/octet-stream")
+        self.set_header("Content-Disposition",
+                        f'attachment; filename="{os.path.basename(path)}"')
+        with open(path, "rb") as f:
+            self.write(f.read())
 
 
 class HealthHandler(tornado.web.RequestHandler):
@@ -210,6 +233,10 @@ class HMIApp:
         self.state = STATE
         self.monitor = HeadingMonitor(self.state)
         self.bridge = Bridge(self.state, self.monitor)
+        # Enable the heading EKF if requested (--ekf). Off by default so it
+        # never disturbs the proven priority chain unless asked for.
+        if getattr(args, "ekf", False):
+            self.bridge.use_ekf = True
         self.can: Optional[CANinterface] = None
         self.autopilot: Optional[Autopilot] = None
         self.link: Optional[CANLink] = None
@@ -244,6 +271,23 @@ class HMIApp:
                 codes = list(st.faults.keys())
             for c in codes:
                 st.clear_fault(c)
+            return
+
+        if command.startswith("pid_gain_"):
+            # pid_gain_up:Kp / pid_gain_down:Ki etc. from the TUI tuning keys.
+            if ap is None:
+                st.log_event("WARN", "PID adjust ignored, autopilot not ready")
+                return
+            try:
+                direction, which = command[len("pid_gain_"):].split(":")
+            except ValueError:
+                return
+            step = {"Kp": ap.kp_step, "Ki": ap.ki_step,
+                    "Kd": ap.kd_step}.get(which, 0.0)
+            if direction == "down":
+                step = -step
+            ap.adjust_gain(which, step)
+            st.log_event("PID", f"{which} -> {getattr(ap, which):.2f}")
             return
 
         if command == "snap_goal":
@@ -339,16 +383,39 @@ class HMIApp:
                     self.tui.flash(f"ENGAGE BLOCKED: {msg}", 4.0)
                 safe_broadcast({"engage_blocked": msg})
                 return
-            # Always seed the goal at the current heading so engaging holds the
-            # present course instead of turning toward a stale setpoint.
-            hv = st.signal_value("fused_heading")
-            if hv is not None:
-                self.set_goal(float(hv), f"engage/{source}")
-                self.autopilot.heading_goal = float(hv)
+            # Engage must start from ZERO error: seed the goal to the current,
+            # ACCURATE heading and pin the controller's current_heading to that
+            # same value, so the first PID cycle sees error = 0 and the boat
+            # holds its present course instead of lurching toward a stale or
+            # slightly-skewed setpoint.
+            #
+            # Read the heading with FRESHNESS (not signal_value, which returns
+            # the last value even when stale) so we never seed the goal from an
+            # outdated heading. cog_lock is already required above, so a fresh
+            # fused heading should be present; guard anyway.
+            hsig = st.get_signal("fused_heading")
+            hv = hsig.value if (hsig is not None and hsig.value is not None
+                                and hsig.is_valid()) else None
+            if hv is None:
+                msg = "no fresh heading -- cannot engage from zero error"
+                st.log_event("BLOCK", f"engage refused: {msg}")
+                if self.tui:
+                    self.tui.flash(f"ENGAGE BLOCKED: {msg}", 4.0)
+                safe_broadcast({"engage_blocked": msg})
+                return
+            hv = float(hv)
+            # Seed goal and current_heading to the SAME value, atomically w.r.t.
+            # the PID, and clear any integral windup so the loop starts clean.
+            self.set_goal(hv, f"engage/{source}")
+            ap.heading_goal = hv
+            ap.current_heading = hv
+            ap.heading_error = 0.0
+            if hasattr(ap, "reset_integral"):
+                ap.reset_integral()
             ap.autopilot_engaged = True
             ap.autopilot_engaged_event.set()
             st.autopilot_engaged = True
-            st.log_event("CMD", f"AUTOPILOT ENGAGED <- {source} (hold {hv:.1f})")
+            st.log_event("CMD", f"AUTOPILOT ENGAGED <- {source} (hold {hv:.1f}, err 0)")
         elif command == "autopilot_disable":
             ap.autopilot_engaged = False
             ap.autopilot_engaged_event.clear()
@@ -503,6 +570,12 @@ class HMIApp:
                 if msg is None:
                     continue
 
+                # Record used frames to the filtered log (small, shareable).
+                try:
+                    RECORDER.record_message(msg)
+                except Exception:
+                    pass
+
                 # Freshness must measure *arrival*, not *capture*. A replayed
                 # candump carries its original timestamps (months old), which
                 # would make every source read as instantly stale and blank
@@ -599,6 +672,17 @@ class HMIApp:
                     self.autopilot.set_cog_lock(self.state.cog_lock)
                     self.state.heading_error = self.autopilot.heading_error
                     self.state.set_signal("shaft_center", self.autopilot.shaft_center)
+                    # Publish live PID state so the TUI PID panel (and the web)
+                    # can show the gains and the P/I/D term contributions.
+                    ap = self.autopilot
+                    self.state.set_signal("pid_kp", ap.Kp)
+                    self.state.set_signal("pid_ki", ap.Ki)
+                    self.state.set_signal("pid_kd", ap.Kd)
+                    self.state.set_signal("pid_p", ap.p_term)
+                    self.state.set_signal("pid_i", ap.i_term)
+                    self.state.set_signal("pid_d", ap.d_term)
+                    self.state.set_signal("pid_integral", ap._integral)
+                    self.state.set_signal("pid_derivative", ap.last_derivative)
             except Exception:
                 logger.exception("health tick failed")
             await asyncio.sleep(0.25)
@@ -608,7 +692,15 @@ class HMIApp:
         while not self._shutdown.is_set():
             try:
                 if clients:
-                    safe_broadcast(self.state.snapshot())
+                    snap = self.state.snapshot()
+                    # attach filtered-log status so /plot can show + download it
+                    try:
+                        rstats = RECORDER.stats()
+                        snap["log_path"] = rstats.get("path")
+                        snap["log_count"] = rstats.get("count")
+                    except Exception:
+                        pass
+                    safe_broadcast(snap)
             except Exception:
                 logger.exception("broadcast failed")
             await asyncio.sleep(period)
@@ -663,6 +755,7 @@ def make_app() -> tornado.web.Application:
             (r"/health", HealthHandler),
             (r"/exit-browser", ExitBrowserHandler),
             (r"/plot", PlotHandler),
+            (r"/used-can-log", LogDownloadHandler),
             (
                 # StaticFileHandler.get() takes a `path` argument that must
                 # come from a capture group in the route regex. The previous
@@ -750,7 +843,15 @@ def main() -> None:
     p.add_argument("--tui-hz", type=float, default=12.0)
     p.add_argument("--ws-hz", type=float, default=5.0)
     p.add_argument("--log-level", default="INFO")
+    p.add_argument("--ekf", action="store_true",
+                   help="enable the heading EKF (off by default; feeds the EKF strip)")
+    p.add_argument("--version", action="store_true", help="print version and exit")
     args = p.parse_args()
+
+    if args.version:
+        from version import version_banner
+        print(version_banner())
+        return
 
     use_tui = not args.no_tui
     setup_logging(use_tui, args.log_level)

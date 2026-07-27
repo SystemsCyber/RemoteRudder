@@ -82,15 +82,19 @@ class TestVehicleDirection:
             f"pitch range {min(vals):.2f}..{max(vals):.2f} implausible for flat water"
         )
 
-    def test_compass_in_range(self, can_iface, underway_log):
+    def test_gps_vehicle_dir_in_range(self, can_iface, underway_log):
         from can.io.canutils import CanutilsLogReader
 
+        # PGN 65256 carries a GPS vehicle DIRECTION (a course), not a compass
+        # heading. It must come back under gps_vehicle_dir, never as a compass
+        # value -- feeding it into compass_heading made the display bounce.
         vals = []
         for msg in CanutilsLogReader(str(underway_log)):
             if msg.arbitration_id == 0x18FEE81C:
                 out = can_iface.process_message(msg)
-                if out and out.get("compass") is not None:
-                    vals.append(out["compass"])
+                assert out is None or "compass" not in out  # never a compass key
+                if out and out.get("gps_vehicle_dir") is not None:
+                    vals.append(out["gps_vehicle_dir"])
         assert vals
         assert all(0.0 <= v < 360.0 for v in vals)
 
@@ -114,20 +118,20 @@ class TestVesselHeading:
         # but it must still be a bearing, not a radian value or a raw count.
         assert -360.0 < can_iface.compass_heading < 720.0
 
-    def test_gated_on_low_speed(self, can_iface):
+    def test_heading_flows_at_all_speeds(self, can_iface):
         """
-        The decoder only returns compass_heading when boat_speed < 1 mph.
-        Documenting this because it is surprising and it interacts with the
-        fusion fallback: at speed, compass updates the attribute but returns
-        None, so the bridge never sees it.
+        The decoder returns compass_heading at ANY speed. The old code gated it
+        on boat_speed < 1, which meant the compass never updated the fusion
+        while moving -- the bridge's COG-primary logic is what decides when to
+        USE heading vs COG, so the decoder must always supply it. (The gate was
+        masked by the vehicle-direction message writing compass_heading when
+        moving, which was itself the display-bounce bug.)
         """
-        can_iface.boat_speed = 0.5
-        out = can_iface.process_message(frame(0x09F112F8, "00A00F00FFFFFFFF"))
-        assert out is not None and "compass_heading" in out
-
-        can_iface.boat_speed = 5.0
-        out = can_iface.process_message(frame(0x09F112F8, "00A00F00FFFFFFFF"))
-        assert out is None
+        for speed in (0.5, 5.0, 15.0):
+            can_iface.boat_speed = speed
+            out = can_iface.process_message(frame(0x09F112F8, "00A00F00FFFFFFFF"))
+            assert out is not None and "compass_heading" in out, \
+                f"heading should be reported at {speed} mph"
 
 
 # ---------------------------------------------------------------------------

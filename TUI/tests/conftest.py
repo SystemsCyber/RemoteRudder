@@ -218,7 +218,67 @@ def wired(state, monitor, bridge, can_iface):
             self.bridge.derive_fused()
             self.monitor.update_state()
 
+        def feed_sampling(self, path, signals, tick_every=100,
+                          bind_claims=True, limit=None):
+            """
+            Replay a log and, at each tick, record the current value of each
+            named signal. Returns {signal_name: [values...]} so a test can
+            assert on the stability (standard deviation) of the numbers that
+            actually feed the control loop and the display.
+
+            bind_claims: also decode J1939 address claims into the heading
+            registry, so registry-bound sources (the wall compass, 24xd)
+            resolve exactly as they do live.
+            """
+            from can.io.canutils import CanutilsLogReader
+            from j1939_name import is_address_claim, decode_name, source_address
+
+            samples = {name: [] for name in signals}
+            extra = {"heading_source": []}  # always track which source is chosen
+            for msg in CanutilsLogReader(str(path)):
+                self.state.mark_source(msg.arbitration_id, time.time())
+                if bind_claims and is_address_claim(msg.arbitration_id):
+                    nm = decode_name(msg.data)
+                    if nm:
+                        self.bridge.heading_registry.note_claim(
+                            source_address(msg.arbitration_id),
+                            nm.mfg_code, nm.function, nm.identity)
+                self.can.rpm_start_time = time.time() - 10.0
+                try:
+                    data = self.can.process_message(msg)
+                except Exception as e:  # noqa: BLE001
+                    self.errors.append((msg.arbitration_id, repr(e)))
+                    data = None
+                if data:
+                    for cb in self.can.listeners:
+                        cb(data)
+                self.frames += 1
+                if self.frames % tick_every == 0:
+                    self.bridge.derive_fused()
+                    for name in signals:
+                        v = self.state.signal_value(name)
+                        if v is not None:
+                            samples[name].append(v)
+                    extra["heading_source"].append(self.state.heading_source)
+                if limit and self.frames >= limit:
+                    break
+            samples["_heading_source"] = extra["heading_source"]
+            return samples
+
     return Wired()
+
+
+def circular_stdev(values):
+    """
+    Standard deviation of angle values, computed on the circle so that a
+    steady heading near the 0/360 wrap does not look noisy. Returns degrees.
+    """
+    import statistics
+    if len(values) < 2:
+        return 0.0
+    mean = statistics.mean(values)
+    dev = [((v - mean + 180.0) % 360.0) - 180.0 for v in values]
+    return statistics.pstdev(dev)
 
 
 # ---------------------------------------------------------------------------
@@ -318,3 +378,24 @@ def pytest_addoption(parser):
         default=False,
         help="run tests that require a real CAN adapter",
     )
+
+
+@pytest.fixture
+def stationary_south_log():
+    """Real capture: boat parked facing south, wall compass steady ~180."""
+    import pathlib
+    p = pathlib.Path(__file__).parent / "fixtures" / "stationary_south.log"
+    return str(p)
+
+
+@pytest.fixture
+def parked_south_log():
+    """
+    Real capture (2026-07-25 11:23), compact carve: boat parked facing south,
+    all devices claiming (incl. the wall compass on 0xF8 and the 24xd on 0x19),
+    so the registry binds and fused heading resolves. The true heading is
+    steady, so this is the fixture for stability tests.
+    """
+    import pathlib
+    p = pathlib.Path(__file__).parent / "fixtures" / "parked_south.log"
+    return str(p)
